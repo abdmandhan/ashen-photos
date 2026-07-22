@@ -20,9 +20,17 @@ type Storage struct {
 }
 
 func New(cfg config.S3Config) (*Storage, error) {
+	region := cfg.Region
+	if region == "" {
+		region = "us-east-1"
+	}
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
+		// Setting region makes presigning fully offline (skips GetBucketLocation,
+		// which fails through a reverse-proxy/tunnel or on a creds mismatch).
+		Region:       region,
+		BucketLookup: minio.BucketLookupPath,
 	})
 	if err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ type S3Config struct {
 	AccessKey       string
 	SecretKey       string
 	UseSSL          bool
+	Region          string
 	BucketPhotos    string
 	BucketVideos    string
 	BucketThumbnail string
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 			AccessKey:       os.Getenv("MINIO_ROOT_USER"),
 			SecretKey:       os.Getenv("MINIO_ROOT_PASSWORD"),
 			UseSSL:          os.Getenv("MINIO_USE_SSL") == "true",
+			Region:          env("MINIO_REGION", "us-east-1"),
 			BucketPhotos:    env("S3_BUCKET_PHOTOS", "ashen-photos"),
 			BucketVideos:    env("S3_BUCKET_VIDEOS", "ashen-videos"),
 			BucketThumbnail: env("S3_BUCKET_THUMBNAILS", "ashen-thumbnails"),

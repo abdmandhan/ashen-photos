@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -120,6 +121,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 
 	putURL, err := s.storage.PresignPut(r.Context(), bucket, asset.StorageKey, presignTTL)
 	if err != nil {
+		log.Printf("presign PUT failed bucket=%s key=%s: %v", bucket, asset.StorageKey, err)
 		writeErr(w, http.StatusInternalServerError, "presign failed")
 		return
 	}

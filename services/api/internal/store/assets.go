@@ -14,10 +14,11 @@ type Asset struct {
 	SHA256     string     `json:"sha256"`
 	MediaType  string     `json:"media_type"`
 	ByteSize   int64      `json:"byte_size"`
-	CapturedAt *time.Time `json:"captured_at"`
-	StorageKey string     `json:"storage_key"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
+	CapturedAt       *time.Time `json:"captured_at"`
+	StorageKey       string     `json:"storage_key"`
+	LivePhotoGroupID *string    `json:"live_photo_group_id"`
+	Status           string     `json:"status"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 type Upload struct {
@@ -54,13 +55,13 @@ func (s *Store) ExistingHashes(ctx context.Context, userID string, hashes []stri
 func (s *Store) CreateAsset(ctx context.Context, a Asset) (Asset, error) {
 	var out Asset
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO assets(user_id, sha256, media_type, byte_size, captured_at, storage_key, status)
-		 VALUES($1,$2,$3,$4,$5,$6,'pending')
+		`INSERT INTO assets(user_id, sha256, media_type, byte_size, captured_at, storage_key, live_photo_group_id, status)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,'pending')
 		 ON CONFLICT (user_id, sha256) DO UPDATE SET sha256 = EXCLUDED.sha256
-		 RETURNING id, user_id, sha256, media_type, byte_size, captured_at, storage_key, status, created_at`,
-		a.UserID, a.SHA256, a.MediaType, a.ByteSize, a.CapturedAt, a.StorageKey,
+		 RETURNING id, user_id, sha256, media_type, byte_size, captured_at, storage_key, live_photo_group_id, status, created_at`,
+		a.UserID, a.SHA256, a.MediaType, a.ByteSize, a.CapturedAt, a.StorageKey, a.LivePhotoGroupID,
 	).Scan(&out.ID, &out.UserID, &out.SHA256, &out.MediaType, &out.ByteSize,
-		&out.CapturedAt, &out.StorageKey, &out.Status, &out.CreatedAt)
+		&out.CapturedAt, &out.StorageKey, &out.LivePhotoGroupID, &out.Status, &out.CreatedAt)
 	return out, err
 }
 

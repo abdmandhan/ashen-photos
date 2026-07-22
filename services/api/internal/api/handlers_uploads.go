@@ -59,9 +59,10 @@ type createUploadRequest struct {
 	SHA256     string     `json:"sha256"`
 	MediaType  string     `json:"media_type"`
 	ByteSize   int64      `json:"byte_size"`
-	CapturedAt *time.Time `json:"captured_at"`
-	DeviceID   *string    `json:"device_id"`
-	Ext        string     `json:"ext"`
+	CapturedAt       *time.Time `json:"captured_at"`
+	DeviceID         *string    `json:"device_id"`
+	Ext              string     `json:"ext"`
+	LivePhotoGroupID *string    `json:"live_photo_group_id"`
 }
 type createUploadResponse struct {
 	UploadID   string `json:"upload_id"`
@@ -101,9 +102,10 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		UserID:     uid,
 		SHA256:     in.SHA256,
 		MediaType:  in.MediaType,
-		ByteSize:   in.ByteSize,
-		CapturedAt: in.CapturedAt,
-		StorageKey: key,
+		ByteSize:         in.ByteSize,
+		CapturedAt:       in.CapturedAt,
+		StorageKey:       key,
+		LivePhotoGroupID: in.LivePhotoGroupID,
 	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "create asset failed")

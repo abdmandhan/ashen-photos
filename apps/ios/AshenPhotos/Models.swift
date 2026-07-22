@@ -53,6 +53,7 @@ struct CreateUploadRequest: Encodable {
     let capturedAt: Date?
     let deviceID: String?
     let ext: String?
+    let livePhotoGroupID: String?
 
     enum CodingKeys: String, CodingKey {
         case sha256
@@ -61,6 +62,7 @@ struct CreateUploadRequest: Encodable {
         case capturedAt = "captured_at"
         case deviceID = "device_id"
         case ext
+        case livePhotoGroupID = "live_photo_group_id"
     }
 }
 
@@ -94,9 +96,12 @@ enum BackupState: String, Codable {
 }
 
 struct BackupItem: Codable, Identifiable {
-    let id: String          // PHAsset.localIdentifier
-    var sha256: String?
-    var mediaType: String   // "photo" | "video"
-    var uploadID: String?
+    let id: String              // PHAsset.localIdentifier
+    var mediaType: String       // "photo" | "video" | "live"
     var state: BackupState
+    var retryCount: Int = 0
+    // Upload ids still in flight (>1 for Live Photos: still + paired video).
+    var outstanding: [String] = []
 }
+
+let maxRetries = 3

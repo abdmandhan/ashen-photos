@@ -8,8 +8,9 @@ struct ExportedAsset {
     let sha256: String
     let byteSize: Int64
     let ext: String?
-    let mediaType: String    // "photo" | "video"
+    let mediaType: String            // "photo" | "video"
     let capturedAt: Date?
+    let livePhotoGroupID: String?    // shared across the still + paired video
 }
 
 enum ScanError: Error {
@@ -38,13 +39,36 @@ enum PhotoScanner {
         return assets
     }
 
-    /// Exports the primary original resource to a temp file and returns its hash.
-    static func export(_ asset: PHAsset) async throws -> ExportedAsset {
+    /// Exports an asset to one or more temp files. A Live Photo yields two parts
+    /// (still + paired video) sharing a `livePhotoGroupID`; everything else yields one.
+    static func export(_ asset: PHAsset) async throws -> [ExportedAsset] {
         let resources = PHAssetResource.assetResources(for: asset)
+
+        if asset.mediaType == .image, asset.mediaSubtypes.contains(.photoLive) {
+            let groupID = UUID().uuidString
+            var parts: [ExportedAsset] = []
+            if let still = resources.first(where: { $0.type == .photo })
+                ?? resources.first(where: { $0.type == .fullSizePhoto }) {
+                parts.append(try await exportResource(still, asset: asset, mediaType: "photo", groupID: groupID))
+            }
+            if let paired = resources.first(where: { $0.type == .pairedVideo })
+                ?? resources.first(where: { $0.type == .fullSizePairedVideo }) {
+                parts.append(try await exportResource(paired, asset: asset, mediaType: "video", groupID: groupID))
+            }
+            if parts.isEmpty { throw ScanError.noResource }
+            return parts
+        }
+
         guard let resource = primaryResource(resources, mediaType: asset.mediaType) else {
             throw ScanError.noResource
         }
+        let mediaType = asset.mediaType == .video ? "video" : "photo"
+        return [try await exportResource(resource, asset: asset, mediaType: mediaType, groupID: nil)]
+    }
 
+    /// Streams one resource to a temp file, hashing as it goes.
+    private static func exportResource(_ resource: PHAssetResource, asset: PHAsset,
+                                       mediaType: String, groupID: String?) async throws -> ExportedAsset {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: tmp.path, contents: nil)
@@ -69,7 +93,6 @@ enum PhotoScanner {
         }
 
         let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-        let mediaType = asset.mediaType == .video ? "video" : "photo"
         let ext = (resource.originalFilename as NSString).pathExtension.lowercased()
 
         return ExportedAsset(
@@ -79,7 +102,8 @@ enum PhotoScanner {
             byteSize: total,
             ext: ext.isEmpty ? nil : ext,
             mediaType: mediaType,
-            capturedAt: asset.creationDate
+            capturedAt: asset.creationDate,
+            livePhotoGroupID: groupID
         )
     }
 

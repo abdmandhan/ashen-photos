@@ -20,8 +20,8 @@ final class BackupCoordinator: NSObject, ObservableObject {
         self.settings = settings
         super.init()
         load()
-        UploadManager.shared.onFinish = { [weak self] uploadID, ok in
-            Task { @MainActor in self?.handleFinish(uploadID: uploadID, ok: ok) }
+        UploadManager.shared.onFinish = { [weak self] uploadID, ok, reason in
+            Task { @MainActor in self?.handleFinish(uploadID: uploadID, ok: ok, reason: reason) }
         }
         UploadManager.shared.start()
     }
@@ -32,6 +32,24 @@ final class BackupCoordinator: NSObject, ObservableObject {
     var done: Int { items.values.filter { $0.state == .done || $0.state == .skipped }.count }
     var failed: Int { items.values.filter { $0.state == .failed }.count }
     var remaining: Int { items.values.filter { $0.state == .pending || $0.state == .uploading }.count }
+    var uploading: Int { items.values.filter { $0.state == .uploading }.count }
+
+    /// Failed items with their reasons, for the UI list.
+    var failedItems: [BackupItem] {
+        items.values.filter { $0.state == .failed }.sorted { $0.id < $1.id }
+    }
+
+    /// Force-retry all failed items now (resets the retry cap), then rescan.
+    func retryFailedNow() async {
+        for (id, var item) in items where item.state == .failed {
+            item.state = .pending
+            item.retryCount = 0
+            item.outstanding = []
+            item.errorMessage = nil
+            items[id] = item
+        }
+        await run()
+    }
 
     // MARK: Run
 
@@ -94,24 +112,26 @@ final class BackupCoordinator: NSObject, ObservableObject {
             var updated = items[id]!
             updated.outstanding = outstanding
             updated.state = outstanding.isEmpty ? .skipped : .uploading
+            updated.errorMessage = nil
             items[id] = updated
         } catch {
-            markFailed(id)
+            markFailed(id, reason: error.localizedDescription)
         }
         save()
     }
 
     // MARK: Upload completion
 
-    private func handleFinish(uploadID: String, ok: Bool) {
+    private func handleFinish(uploadID: String, ok: Bool, reason: String?) {
         guard let local = uploadToLocal[uploadID], var item = items[local] else { return }
         uploadToLocal[uploadID] = nil
         item.outstanding.removeAll { $0 == uploadID }
 
         if !ok {
-            markFailed(local)
+            markFailed(local, reason: reason ?? "Upload failed")
         } else if item.outstanding.isEmpty {
             item.state = .done
+            item.errorMessage = nil
             items[local] = item
         } else {
             items[local] = item // still waiting on other parts
@@ -120,10 +140,11 @@ final class BackupCoordinator: NSObject, ObservableObject {
         if remaining == 0 { statusLine = "Backup complete" }
     }
 
-    private func markFailed(_ id: String) {
+    private func markFailed(_ id: String, reason: String) {
         guard var item = items[id] else { return }
         item.state = .failed
         item.outstanding = []
+        item.errorMessage = reason
         items[id] = item
     }
 

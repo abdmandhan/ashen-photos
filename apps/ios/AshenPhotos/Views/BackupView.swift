@@ -6,42 +6,87 @@ struct BackupView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                progress
+            ScrollView {
+                VStack(spacing: 20) {
+                    progress
 
-                VStack(spacing: 8) {
-                    stat("Backed up", coordinator.done, .green)
-                    stat("Remaining", coordinator.remaining, .blue)
-                    if coordinator.failed > 0 { stat("Failed", coordinator.failed, .red) }
-                }
+                    VStack(spacing: 8) {
+                        stat("Backed up", coordinator.done, .green)
+                        stat("Uploading", coordinator.uploading, .blue)
+                        stat("Remaining", coordinator.remaining, .gray)
+                        if coordinator.failed > 0 { stat("Failed", coordinator.failed, .red) }
+                    }
 
-                Text(coordinator.statusLine)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                if !settings.canUpload {
-                    Label("Waiting for \(settings.wifiOnly ? "Wi-Fi" : "power")",
-                          systemImage: "pause.circle")
+                    Text(coordinator.statusLine)
                         .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
+                        .foregroundStyle(.secondary)
 
-                Button {
-                    Task { await coordinator.run() }
-                } label: {
-                    Label(coordinator.running ? "Backing up…" : "Back up now",
-                          systemImage: "icloud.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(coordinator.running)
+                    if !settings.canUpload {
+                        Label("Waiting for \(settings.wifiOnly ? "Wi-Fi" : "power")",
+                              systemImage: "pause.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
 
-                Spacer()
+                    Button {
+                        Task { await coordinator.run() }
+                    } label: {
+                        Label(coordinator.running ? "Backing up…" : "Back up now",
+                              systemImage: "icloud.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(coordinator.running)
+
+                    if !coordinator.failedItems.isEmpty {
+                        failedSection
+                    }
+                }
+                .padding()
             }
-            .padding()
             .navigationTitle("Backup")
             .task { await coordinator.run() }
         }
+    }
+
+    private var failedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Failed (\(coordinator.failedItems.count))")
+                    .font(.headline)
+                Spacer()
+                Button("Retry all") { Task { await coordinator.retryFailedNow() } }
+                    .font(.footnote)
+                    .disabled(coordinator.running)
+            }
+            ForEach(coordinator.failedItems) { item in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Image(systemName: item.mediaType == "video" ? "video" : (item.mediaType == "live" ? "livephoto" : "photo"))
+                            .foregroundStyle(.secondary)
+                        Text(shortID(item.id))
+                            .font(.subheadline.monospaced())
+                        Spacer()
+                        if item.retryCount > 0 {
+                            Text("retried \(item.retryCount)×")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(item.errorMessage ?? "Unknown error")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    private func shortID(_ id: String) -> String {
+        String(id.prefix(8)) + "…"
     }
 
     private var progress: some View {

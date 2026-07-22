@@ -102,6 +102,8 @@ struct BackupItem: Codable, Identifiable {
     var retryCount: Int = 0
     // Upload ids still in flight (>1 for Live Photos: still + paired video).
     var outstanding: [String] = []
+    // Reason for the last failure, shown in the UI.
+    var errorMessage: String? = nil
 }
 
 let maxRetries = 3

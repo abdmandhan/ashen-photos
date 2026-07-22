@@ -6,8 +6,8 @@ import Foundation
 final class UploadManager: NSObject {
     static let shared = UploadManager()
 
-    /// Called on the main actor when an upload finishes (success or failure).
-    var onFinish: ((_ uploadID: String, _ success: Bool) -> Void)?
+    /// Called on the main actor when an upload finishes. `reason` is nil on success.
+    var onFinish: ((_ uploadID: String, _ success: Bool, _ reason: String?) -> Void)?
 
     /// Set by the AppDelegate for background-session completion.
     var backgroundCompletion: (() -> Void)?
@@ -24,7 +24,7 @@ final class UploadManager: NSObject {
     /// Uploads `fileURL` to `putURL` (a presigned PUT), tagging the task with the upload id.
     func upload(fileURL: URL, to putURL: String, uploadID: String) {
         guard let url = URL(string: putURL) else {
-            onFinish?(uploadID, false)
+            onFinish?(uploadID, false, "Invalid upload URL")
             return
         }
         var req = URLRequest(url: url)
@@ -44,11 +44,18 @@ extension UploadManager: URLSessionDataDelegate {
         if parts.count == 2 { try? FileManager.default.removeItem(atPath: parts[1]) }
 
         let http = task.response as? HTTPURLResponse
-        let ok = error == nil && (200..<300).contains(http?.statusCode ?? 0)
+        let code = http?.statusCode ?? 0
+        let ok = error == nil && (200..<300).contains(code)
+
+        var reason: String?
+        if !ok {
+            if let error { reason = "Upload failed: \(error.localizedDescription)" }
+            else { reason = "Storage rejected upload (HTTP \(code))" }
+        }
 
         Task { @MainActor in
             if ok { await Self.callComplete(uploadID: uploadID) }
-            self.onFinish?(uploadID, ok)
+            self.onFinish?(uploadID, ok, reason)
         }
     }
 

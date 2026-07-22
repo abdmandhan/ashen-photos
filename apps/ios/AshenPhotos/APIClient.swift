@@ -1,8 +1,23 @@
 import Foundation
 
-enum APIError: Error {
+enum APIError: LocalizedError {
     case status(Int, String)
     case decoding
+
+    var errorDescription: String? {
+        switch self {
+        case let .status(code, body):
+            // Server sends {"error":"..."}; surface that message when present.
+            if let data = body.data(using: .utf8),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let msg = obj["error"] as? String {
+                return "HTTP \(code): \(msg)"
+            }
+            return "HTTP \(code)"
+        case .decoding:
+            return "Bad response from server"
+        }
+    }
 }
 
 /// Thin async wrapper over the Ashen API. `tokenProvider` supplies the current

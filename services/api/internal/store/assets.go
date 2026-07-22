@@ -29,11 +29,13 @@ type Upload struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ExistingHashes returns the subset of sha256 values that already have a
-// completed-or-in-flight asset for this user (dedup check).
+// ExistingHashes returns the subset of sha256 values that are already fully
+// backed up for this user (dedup check). Only `complete` assets count — a
+// pending/uploading/failed row must NOT cause the client to skip re-uploading,
+// otherwise a half-finished upload can never recover.
 func (s *Store) ExistingHashes(ctx context.Context, userID string, hashes []string) (map[string]string, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT sha256, id FROM assets WHERE user_id=$1 AND sha256 = ANY($2)`,
+		`SELECT sha256, id FROM assets WHERE user_id=$1 AND sha256 = ANY($2) AND status='complete'`,
 		userID, hashes)
 	if err != nil {
 		return nil, err

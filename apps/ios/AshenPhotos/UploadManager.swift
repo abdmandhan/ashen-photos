@@ -54,8 +54,17 @@ extension UploadManager: URLSessionDataDelegate {
         }
 
         Task { @MainActor in
-            if ok { await Self.callComplete(uploadID: uploadID) }
-            self.onFinish?(uploadID, ok, reason)
+            var finalOK = ok
+            var finalReason = reason
+            if ok {
+                // PUT landed; confirm with the API. A failed confirm means the object
+                // is orphaned + unverified — surface it so it retries, don't mark done.
+                if let confirmErr = await Self.callComplete(uploadID: uploadID) {
+                    finalOK = false
+                    finalReason = "Uploaded but confirm failed: \(confirmErr)"
+                }
+            }
+            self.onFinish?(uploadID, finalOK, finalReason)
         }
     }
 
@@ -63,9 +72,15 @@ extension UploadManager: URLSessionDataDelegate {
         DispatchQueue.main.async { self.backgroundCompletion?(); self.backgroundCompletion = nil }
     }
 
-    /// Signals the API the object landed; safe to call after a background relaunch (token from Keychain).
-    private static func callComplete(uploadID: String) async {
+    /// Signals the API the object landed; safe to call after a background relaunch
+    /// (token from Keychain). Returns nil on success, or a reason string on failure.
+    private static func callComplete(uploadID: String) async -> String? {
         let api = APIClient(tokenProvider: { Keychain.get("token") })
-        try? await api.completeUpload(id: uploadID)
+        do {
+            try await api.completeUpload(id: uploadID)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 }

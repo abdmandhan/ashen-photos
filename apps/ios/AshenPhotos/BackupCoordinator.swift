@@ -5,6 +5,7 @@ import Photos
 final class BackupCoordinator: NSObject, ObservableObject {
     @Published private(set) var items: [String: BackupItem] = [:]
     @Published private(set) var running = false
+    @Published private(set) var paused = false
     @Published var statusLine = "Idle"
     @Published var authorized = false
 
@@ -29,7 +30,12 @@ final class BackupCoordinator: NSObject, ObservableObject {
     // MARK: Derived counts
 
     var total: Int { items.count }
+    /// Completed = actually uploaded now + already-on-server (dedup skipped).
     var done: Int { items.values.filter { $0.state == .done || $0.state == .skipped }.count }
+    /// Files this run actually sent to storage.
+    var uploaded: Int { items.values.filter { $0.state == .done }.count }
+    /// Already on the server, nothing sent (deduped by checksum).
+    var skipped: Int { items.values.filter { $0.state == .skipped }.count }
     var failed: Int { items.values.filter { $0.state == .failed }.count }
     var remaining: Int { items.values.filter { $0.state == .pending || $0.state == .uploading }.count }
     var uploading: Int { items.values.filter { $0.state == .uploading }.count }
@@ -51,10 +57,23 @@ final class BackupCoordinator: NSObject, ObservableObject {
         await run()
     }
 
+    // MARK: Pause / resume
+
+    func pause() {
+        paused = true
+        statusLine = "Paused"
+    }
+
+    func resume() {
+        paused = false
+        Task { await run() }
+    }
+
     // MARK: Run
 
     func run() async {
         guard !running else { return }
+        guard !paused else { statusLine = "Paused"; return }
         running = true
         defer { running = false; save() }
 
@@ -72,6 +91,10 @@ final class BackupCoordinator: NSObject, ObservableObject {
         retryFailed()
 
         for asset in assets {
+            if paused {
+                statusLine = "Paused"
+                return
+            }
             if !settings.canUpload {
                 statusLine = "Paused (waiting for Wi-Fi/charging)"
                 break
@@ -80,6 +103,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
             await process(asset)
         }
 
+        if paused { statusLine = "Paused"; return }
         statusLine = remaining > 0 ? "Uploading in background…" : "Backup complete"
     }
 

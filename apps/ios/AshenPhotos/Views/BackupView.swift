@@ -11,7 +11,8 @@ struct BackupView: View {
                     progress
 
                     VStack(spacing: 8) {
-                        stat("Backed up", coordinator.done, .green)
+                        stat("Uploaded", coordinator.uploaded, .green)
+                        stat("Already saved", coordinator.skipped, .teal)
                         stat("Uploading", coordinator.uploading, .blue)
                         stat("Remaining", coordinator.remaining, .gray)
                         if coordinator.failed > 0 { stat("Failed", coordinator.failed, .red) }
@@ -28,15 +29,34 @@ struct BackupView: View {
                             .foregroundStyle(.orange)
                     }
 
-                    Button {
-                        Task { await coordinator.run() }
-                    } label: {
-                        Label(coordinator.running ? "Backing up…" : "Back up now",
-                              systemImage: "icloud.and.arrow.up")
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await coordinator.run() }
+                        } label: {
+                            Label(coordinator.running ? "Backing up…" : "Back up now",
+                                  systemImage: "icloud.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(coordinator.running || coordinator.paused)
+
+                        if coordinator.paused {
+                            Button {
+                                coordinator.resume()
+                            } label: {
+                                Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                        } else {
+                            Button {
+                                coordinator.pause()
+                            } label: {
+                                Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!coordinator.running && coordinator.remaining == 0)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(coordinator.running)
 
                     if !coordinator.failedItems.isEmpty {
                         failedSection

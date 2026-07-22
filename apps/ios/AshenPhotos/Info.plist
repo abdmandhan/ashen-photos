@@ -26,6 +26,22 @@
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Ashen Photos needs read access to back up your photos and videos to your own storage.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Dev: MinIO on nuc.test is served over plain HTTP. Presigned upload/download
+		     URLs point at it, so allow insecure loads for that host. In production,
+		     put object storage behind TLS and remove this exception. -->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>nuc.test</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

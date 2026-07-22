@@ -29,3 +29,4 @@ yarn-error.log*
 # --- Editor ---
 .idea/
 .vscode/
+.gstack/

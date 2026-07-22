@@ -28,6 +28,21 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// cors permits browser dashboards (any origin) to call the API. Dev-grade;
+// tighten to an allowlist before production.
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func userID(r *http.Request) string {
 	v, _ := r.Context().Value(userIDKey).(string)
 	return v

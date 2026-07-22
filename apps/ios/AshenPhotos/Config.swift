@@ -7,7 +7,7 @@ enum Config {
         if let s = ProcessInfo.processInfo.environment["ASHEN_API_URL"], let u = URL(string: s) {
             return u
         }
-        return URL(string: "http://nuc.test:8080")!
+        return URL(string: "https://8082.abdmandhan.com")!
     }
 
     /// Batch size for /uploads/check dedup requests.

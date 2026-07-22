@@ -31,6 +31,7 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(cors)
 
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -50,6 +51,9 @@ func (s *Server) Router() http.Handler {
 		r.Post("/uploads/check", s.handleUploadCheck)
 		r.Post("/uploads", s.handleCreateUpload)
 		r.Post("/uploads/{id}/complete", s.handleCompleteUpload)
+
+		r.Get("/assets", s.handleListAssets)
+		r.Get("/stats", s.handleStats)
 	})
 
 	return r

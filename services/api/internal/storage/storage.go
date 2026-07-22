@@ -35,6 +35,9 @@ func New(cfg config.S3Config) (*Storage, error) {
 	}, nil
 }
 
+// ThumbBucket returns the bucket thumbnails are stored in.
+func (s *Storage) ThumbBucket() string { return s.bucketThumb }
+
 // BucketFor maps a media type to its object-storage bucket.
 func (s *Storage) BucketFor(mediaType string) (string, error) {
 	switch mediaType {

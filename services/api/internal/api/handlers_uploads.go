@@ -19,7 +19,8 @@ type checkItem struct {
 	ByteSize int64  `json:"byte_size"`
 }
 type checkRequest struct {
-	Items []checkItem `json:"items"`
+	Items    []checkItem `json:"items"`
+	DeviceID *string     `json:"device_id"`
 }
 type checkResult struct {
 	SHA256  string `json:"sha256"`
@@ -50,6 +51,11 @@ func (s *Server) handleUploadCheck(w http.ResponseWriter, r *http.Request) {
 	for i, it := range in.Items {
 		id, ok := existing[it.SHA256]
 		results[i] = checkResult{SHA256: it.SHA256, Exists: ok, AssetID: id}
+		// Reconcile: this device also holds an already-backed-up asset. Record it
+		// without re-uploading bytes (multi-device dedup).
+		if ok && in.DeviceID != nil && *in.DeviceID != "" {
+			s.store.RecordAssetDevice(r.Context(), id, *in.DeviceID)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
 }
@@ -117,6 +123,9 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "create upload failed")
 		return
+	}
+	if in.DeviceID != nil && *in.DeviceID != "" {
+		s.store.RecordAssetDevice(r.Context(), asset.ID, *in.DeviceID)
 	}
 
 	putURL, err := s.storage.PresignPut(r.Context(), bucket, asset.StorageKey, presignTTL)

@@ -57,6 +57,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		// Track device liveness: any authed request carrying X-Device-Id bumps last_seen_at.
+		if dev := r.Header.Get("X-Device-Id"); dev != "" {
+			s.store.TouchDevice(r.Context(), userID, dev)
+		}
 		ctx := context.WithValue(r.Context(), userIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -48,6 +48,7 @@ func (s *Server) Router() http.Handler {
 
 		r.Post("/devices", s.handleCreateDevice)
 		r.Get("/devices", s.handleListDevices)
+		r.Patch("/devices/{id}", s.handleRenameDevice)
 
 		r.Post("/uploads/check", s.handleUploadCheck)
 		r.Post("/uploads", s.handleCreateUpload)

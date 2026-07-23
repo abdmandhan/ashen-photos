@@ -41,7 +41,26 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showNewAlbum = true } label: { Image(systemName: "rectangle.stack.badge.plus") }
+                    Menu {
+                        Button { showNewAlbum = true } label: { Label("New album", systemImage: "rectangle.stack.badge.plus") }
+                        Button {
+                            Task { await store.backfillThumbnails() }
+                        } label: { Label("Backfill thumbnails", systemImage: "photo.badge.arrow.down") }
+                            .disabled(store.backfilling)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                if let status = store.backfillStatus, store.backfilling {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(status).font(.footnote)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .background(.thinMaterial)
                 }
             }
             .refreshable { await store.load() }
@@ -70,18 +89,23 @@ struct LibraryView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(store.albums) { al in
-                    VStack(alignment: .leading, spacing: 4) {
-                        AsyncImage(url: al.coverURL.flatMap(URL.init)) { img in
-                            img.resizable().scaledToFill()
-                        } placeholder: {
-                            Rectangle().fill(.gray.opacity(0.2))
+                    NavigationLink {
+                        AlbumDetailView(album: al, store: store)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            AsyncImage(url: al.coverURL.flatMap(URL.init)) { img in
+                                img.resizable().scaledToFill()
+                            } placeholder: {
+                                Rectangle().fill(.gray.opacity(0.2))
+                            }
+                            .frame(width: 110, height: 110)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            Text(al.name).font(.subheadline).lineLimit(1)
+                            Text("\(al.assetCount)").font(.caption).foregroundStyle(.secondary)
                         }
-                        .frame(width: 110, height: 110)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        Text(al.name).font(.subheadline).lineLimit(1)
-                        Text("\(al.assetCount)").font(.caption).foregroundStyle(.secondary)
+                        .frame(width: 110)
                     }
-                    .frame(width: 110)
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -103,6 +127,19 @@ struct LibraryView: View {
             .clipped()
             .contentShape(Rectangle())
             .onTapGesture { preview = asset }
+            .contextMenu {
+                if store.albums.isEmpty {
+                    Text("No albums yet")
+                } else {
+                    Menu("Add to album") {
+                        ForEach(store.albums) { al in
+                            Button(al.name) {
+                                Task { await store.addToAlbum(albumID: al.id, assetID: asset.id) }
+                            }
+                        }
+                    }
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 Button {
                     Task { await store.toggleFavorite(asset) }

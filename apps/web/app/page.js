@@ -81,6 +81,9 @@ function Dashboard({ onLogout }) {
   const [repl, setRepl] = useState(null);
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(null);      // asset shown in lightbox
+  const [albumView, setAlbumView] = useState(null);  // { album, assets }
+  const [addMenu, setAddMenu] = useState(null);       // asset id whose add-to-album menu is open
 
   async function loadAssets(key) {
     const f = FILTERS.find((x) => x.key === key) || FILTERS[0];
@@ -140,6 +143,31 @@ function Dashboard({ onLogout }) {
     catch (e) { setError(e.message); }
   }
 
+  async function openAlbum(al) {
+    try { const r = await api.albumAssets(al.id); setAlbumView({ album: al, assets: r.assets || [] }); }
+    catch (e) { setError(e.message); }
+  }
+
+  async function deleteAlbum() {
+    if (!albumView || !confirm(`Delete album “${albumView.album.name}”? Your photos stay.`)) return;
+    try { await api.deleteAlbum(albumView.album.id); setAlbumView(null); await refreshMeta(); }
+    catch (e) { setError(e.message); }
+  }
+
+  async function removeFromAlbum(assetId) {
+    try {
+      await api.removeFromAlbum(albumView.album.id, assetId);
+      const r = await api.albumAssets(albumView.album.id);
+      setAlbumView({ ...albumView, assets: r.assets || [] });
+      await refreshMeta();
+    } catch (e) { setError(e.message); }
+  }
+
+  async function addToAlbum(albumId, assetId) {
+    try { await api.addToAlbum(albumId, assetId); setAddMenu(null); await refreshMeta(); }
+    catch (e) { setError(e.message); }
+  }
+
   return (
     <>
       <div className="header">
@@ -164,7 +192,7 @@ function Dashboard({ onLogout }) {
         <div className="albums">
           {albums.length === 0 && <div className="muted">No albums yet.</div>}
           {albums.map((al) => (
-            <div className="album" key={al.id}>
+            <div className="album album-clickable" key={al.id} onClick={() => openAlbum(al)}>
               <div className="album-cover">
                 {al.cover_url ? <img src={al.cover_url} alt="" /> : <div className="placeholder">empty</div>}
               </div>
@@ -235,7 +263,7 @@ function Dashboard({ onLogout }) {
         {assets.length === 0 && <div className="muted">Nothing here.</div>}
         <div className="grid">
           {assets.map((a) => (
-            <a className="tile" key={a.id} href={a.download_url} target="_blank" rel="noreferrer" title="Download original">
+            <div className="tile" key={a.id} onClick={() => setPreview(a)} title="Preview">
               {a.thumb_url ? (
                 <img src={a.thumb_url} alt="" loading="lazy" />
               ) : (
@@ -249,10 +277,93 @@ function Dashboard({ onLogout }) {
               >
                 {a.favorite ? "♥" : "♡"}
               </button>
-            </a>
+              {albums.length > 0 && (
+                <button
+                  className="add-btn"
+                  onClick={(e) => { e.stopPropagation(); setAddMenu(addMenu === a.id ? null : a.id); }}
+                  title="Add to album"
+                >
+                  +
+                </button>
+              )}
+              {addMenu === a.id && (
+                <div className="add-menu" onClick={(e) => e.stopPropagation()}>
+                  {albums.map((al) => (
+                    <button key={al.id} onClick={() => addToAlbum(al.id, a.id)}>{al.name}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
+
+      {preview && (
+        <Lightbox asset={preview} onClose={() => setPreview(null)} />
+      )}
+
+      {albumView && (
+        <AlbumModal
+          view={albumView}
+          onClose={() => setAlbumView(null)}
+          onDelete={deleteAlbum}
+          onRemove={removeFromAlbum}
+          onPreview={setPreview}
+        />
+      )}
     </>
+  );
+}
+
+function Lightbox({ asset, onClose }) {
+  const isVideo = asset.media_type === "video";
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <button className="lightbox-close" onClick={onClose}>✕</button>
+      <div className="lightbox-body" onClick={(e) => e.stopPropagation()}>
+        {isVideo ? (
+          <video src={asset.download_url} controls autoPlay className="lightbox-media" />
+        ) : (
+          <img src={asset.download_url} alt="" className="lightbox-media" />
+        )}
+        <a className="lightbox-dl" href={asset.download_url} target="_blank" rel="noreferrer">
+          Download original
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function AlbumModal({ view, onClose, onDelete, onRemove, onPreview }) {
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <div className="album-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="album-modal-head">
+          <h2>{view.album.name}</h2>
+          <div>
+            <button className="chip chip-danger" onClick={onDelete}>Delete album</button>
+            <button className="link" onClick={onClose}>Close</button>
+          </div>
+        </div>
+        {view.assets.length === 0 ? (
+          <div className="muted">No items. Add photos with the + button on a tile.</div>
+        ) : (
+          <div className="grid">
+            {view.assets.map((a) => (
+              <div className="tile" key={a.id} onClick={() => onPreview(a)}>
+                {a.thumb_url ? <img src={a.thumb_url} alt="" /> : <div className="placeholder">{a.media_type}</div>}
+                <button
+                  className="add-btn remove-btn"
+                  onClick={(e) => { e.stopPropagation(); onRemove(a.id); }}
+                  title="Remove from album"
+                >
+                  −
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

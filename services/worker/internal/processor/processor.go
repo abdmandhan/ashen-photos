@@ -149,6 +149,12 @@ func (p *Processor) Process(ctx context.Context, j job.VerifyJob) error {
 
 	var phash *int64
 
+	// Client-provided thumbnail (HEIC/video decoded natively on device) takes
+	// priority — the worker can't decode those formats itself.
+	if j.ThumbKey != "" {
+		thumbKey = j.ThumbKey
+	}
+
 	if j.MediaType == "photo" {
 		raw := buf.Bytes()
 		if img, _, derr := image.Decode(bytes.NewReader(raw)); derr == nil {
@@ -156,14 +162,16 @@ func (p *Processor) Process(ctx context.Context, j job.VerifyJob) error {
 			height = img.Bounds().Dy()
 			h := int64(dHash(img)) // perceptual hash for near-dup detection
 			phash = &h
-			if key, terr := p.makeThumb(ctx, j, img); terr == nil {
-				thumbKey = key
-			} else {
-				log.Printf("thumb asset=%s: %v", j.AssetID, terr)
+			if thumbKey == "" { // no client thumb → generate from decodable formats
+				if key, terr := p.makeThumb(ctx, j, img); terr == nil {
+					thumbKey = key
+				} else {
+					log.Printf("thumb asset=%s: %v", j.AssetID, terr)
+				}
 			}
 		} else {
-			// HEIC and other undecodable formats: verified but no thumb (deferred).
-			log.Printf("decode asset=%s: %v (skip thumb)", j.AssetID, derr)
+			// HEIC etc: can't decode server-side; rely on the client thumbnail.
+			log.Printf("decode asset=%s: %v (using client thumb=%v)", j.AssetID, derr, j.ThumbKey != "")
 		}
 		capturedAt, exifJSON = extractExif(raw)
 	}

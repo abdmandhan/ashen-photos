@@ -77,8 +77,49 @@ final class APIClient {
         try await post("/uploads", body: req)
     }
 
-    func completeUpload(id: String) async throws {
-        _ = try await request(path: "/uploads/\(id)/complete", method: "POST", body: Optional<Data>.none, authed: true)
+    func completeUpload(id: String, thumb: Bool = false) async throws {
+        struct Body: Encodable { let thumb: Bool }
+        _ = try await request(path: "/uploads/\(id)/complete", method: "POST",
+                              body: try Self.encoder.encode(Body(thumb: thumb)), authed: true)
+    }
+
+    // MARK: Thumbnail backfill
+
+    func missingThumbs() async throws -> [String] {
+        struct R: Decodable { let shas: [String] }
+        let data = try await request(path: "/thumbnails/missing", method: "GET", body: Optional<Data>.none, authed: true)
+        return (try Self.decoder.decode(R.self, from: data)).shas
+    }
+
+    func presignThumb(sha256: String) async throws -> String {
+        struct Body: Encodable { let sha256: String }
+        struct R: Decodable {
+            let thumbPutURL: String
+            enum CodingKeys: String, CodingKey { case thumbPutURL = "thumb_put_url" }
+        }
+        let data = try await request(path: "/thumbnails/presign", method: "POST",
+                                     body: try Self.encoder.encode(Body(sha256: sha256)), authed: true)
+        return (try Self.decoder.decode(R.self, from: data)).thumbPutURL
+    }
+
+    func commitThumb(sha256: String) async throws {
+        struct Body: Encodable { let sha256: String }
+        _ = try await request(path: "/thumbnails/commit", method: "POST",
+                              body: try Self.encoder.encode(Body(sha256: sha256)), authed: true)
+    }
+
+    /// PUTs a JPEG thumbnail to a presigned storage URL. Returns success.
+    func putThumbnail(to urlString: String, data: Data) async -> Bool {
+        guard let url = URL(string: urlString) else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        do {
+            let (_, resp) = try await session.upload(for: req, from: data)
+            return ((resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) }) ?? false
+        } catch {
+            return false
+        }
     }
 
     // MARK: Library
@@ -86,6 +127,11 @@ final class APIClient {
     func listAssets(query: String = "") async throws -> [RemoteAsset] {
         let data = try await request(path: "/assets\(query)", method: "GET", body: Optional<Data>.none, authed: true)
         return (try Self.decoder.decode(AssetsResponse.self, from: data)).assets
+    }
+
+    func stats() async throws -> RemoteStats {
+        let data = try await request(path: "/stats", method: "GET", body: Optional<Data>.none, authed: true)
+        return try Self.decoder.decode(RemoteStats.self, from: data)
     }
 
     func listAlbums() async throws -> [RemoteAlbum] {
@@ -103,6 +149,27 @@ final class APIClient {
         struct Body: Encodable { let name: String }
         _ = try await request(path: "/albums", method: "POST",
                               body: try Self.encoder.encode(Body(name: name)), authed: true)
+    }
+
+    func deleteAlbum(id: String) async throws {
+        _ = try await request(path: "/albums/\(id)", method: "DELETE", body: Optional<Data>.none, authed: true)
+    }
+
+    func albumAssets(id: String) async throws -> [RemoteAsset] {
+        let data = try await request(path: "/albums/\(id)/assets", method: "GET", body: Optional<Data>.none, authed: true)
+        return (try Self.decoder.decode(AssetsResponse.self, from: data)).assets
+    }
+
+    func addToAlbum(albumID: String, assetID: String) async throws {
+        struct Body: Encodable { let assetID: String
+            enum CodingKeys: String, CodingKey { case assetID = "asset_id" } }
+        _ = try await request(path: "/albums/\(albumID)/assets", method: "POST",
+                              body: try Self.encoder.encode(Body(assetID: assetID)), authed: true)
+    }
+
+    func removeFromAlbum(albumID: String, assetID: String) async throws {
+        _ = try await request(path: "/albums/\(albumID)/assets/\(assetID)", method: "DELETE",
+                              body: Optional<Data>.none, authed: true)
     }
 
     // MARK: Core

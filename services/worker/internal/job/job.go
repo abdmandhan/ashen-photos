@@ -22,6 +22,7 @@ type VerifyJob struct {
 	StorageKey string `json:"storage_key"`
 	SHA256     string `json:"sha256"`
 	MediaType  string `json:"media_type"`
+	ThumbKey   string `json:"thumb_key,omitempty"` // client-uploaded thumbnail
 }
 
 // ReplicateQueueKey is the list for replication jobs.

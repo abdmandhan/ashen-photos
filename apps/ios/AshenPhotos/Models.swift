@@ -77,12 +77,16 @@ struct CreateUploadResponse: Decodable {
     let assetID: String
     let storageKey: String
     let putURL: String
+    let thumbKey: String?
+    let thumbPutURL: String?
 
     enum CodingKeys: String, CodingKey {
         case uploadID = "upload_id"
         case assetID = "asset_id"
         case storageKey = "storage_key"
         case putURL = "put_url"
+        case thumbKey = "thumb_key"
+        case thumbPutURL = "thumb_put_url"
     }
 }
 
@@ -132,6 +136,18 @@ struct AlbumsResponse: Decodable {
     let albums: [RemoteAlbum]
 }
 
+struct RemoteStats: Decodable {
+    let photoCount: Int
+    let videoCount: Int
+    let totalBytes: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case photoCount = "photo_count"
+        case videoCount = "video_count"
+        case totalBytes = "total_bytes"
+    }
+}
+
 // MARK: - Local backup state
 
 enum BackupState: String, Codable {
@@ -151,6 +167,15 @@ struct BackupItem: Codable, Identifiable {
     var outstanding: [String] = []
     // Reason for the last failure, shown in the UI.
     var errorMessage: String? = nil
+
+    // --- Free Up Space (Phase 2a) ---
+    var byteSize: Int64 = 0         // total on-device original size (sum of parts)
+    var shas: [String] = []          // sha256 of each uploaded part (for verify reconciliation)
+    var verified: Bool = false       // server confirmed status=complete for all parts
+    var deletedFromDevice: Bool = false
+
+    /// SAFE_TO_DELETE: fully verified on the server and still on this device.
+    var safeToDelete: Bool { verified && !deletedFromDevice }
 }
 
 let maxRetries = 3

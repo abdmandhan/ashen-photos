@@ -8,6 +8,11 @@ final class BackupCoordinator: NSObject, ObservableObject {
     @Published private(set) var paused = false
     @Published var statusLine = "Idle"
     @Published var authorized = false
+    @Published var lastBackupAt: Date? {
+        didSet { UserDefaults.standard.set(lastBackupAt, forKey: "last_backup_at") }
+    }
+    @Published var reconciling = false
+    @Published var backendStats: RemoteStats?
 
     private let auth: AuthStore
     private let settings: SettingsStore
@@ -21,6 +26,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
         self.settings = settings
         super.init()
         load()
+        lastBackupAt = UserDefaults.standard.object(forKey: "last_backup_at") as? Date
         UploadManager.shared.onFinish = { [weak self] uploadID, ok, reason in
             Task { @MainActor in self?.handleFinish(uploadID: uploadID, ok: ok, reason: reason) }
         }
@@ -116,27 +122,45 @@ final class BackupCoordinator: NSObject, ObservableObject {
             let parts = try await PhotoScanner.export(asset)
 
             var outstanding: [String] = []
+            var totalBytes: Int64 = 0
+            var shas: [String] = []
+            var allExisted = true
             for part in parts {
+                totalBytes += part.byteSize
+                shas.append(part.sha256)
                 let results = try await api.check([CheckItem(sha256: part.sha256, byteSize: part.byteSize)])
                 if results.first?.exists == true {
+                    // Already on the server (verified/complete) — no upload needed.
                     try? FileManager.default.removeItem(at: part.fileURL)
                     continue
                 }
+                allExisted = false
                 let req = CreateUploadRequest(
                     sha256: part.sha256, mediaType: part.mediaType, byteSize: part.byteSize,
                     capturedAt: part.capturedAt, deviceID: auth.deviceID,
                     ext: part.ext, livePhotoGroupID: part.livePhotoGroupID
                 )
                 let up = try await api.createUpload(req)
+
+                // Upload the client-rendered thumbnail (HEIC/video) if present.
+                var hasThumb = false
+                if let thumbData = part.thumbnailJPEG, let thumbURL = up.thumbPutURL, !thumbURL.isEmpty {
+                    hasThumb = await api.putThumbnail(to: thumbURL, data: thumbData)
+                }
+
                 outstanding.append(up.uploadID)
                 uploadToLocal[up.uploadID] = id
-                UploadManager.shared.upload(fileURL: part.fileURL, to: up.putURL, uploadID: up.uploadID)
+                UploadManager.shared.upload(fileURL: part.fileURL, to: up.putURL, uploadID: up.uploadID, hasThumb: hasThumb)
             }
 
             var updated = items[id]!
             updated.outstanding = outstanding
             updated.state = outstanding.isEmpty ? .skipped : .uploading
             updated.errorMessage = nil
+            updated.byteSize = totalBytes
+            updated.shas = shas
+            // Every part already existed on the server → verified now (dedup = complete).
+            if allExisted { updated.verified = true; lastBackupAt = Date() }
             items[id] = updated
         } catch {
             markFailed(id, reason: error.localizedDescription)
@@ -157,6 +181,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
             item.state = .done
             item.errorMessage = nil
             items[local] = item
+            lastBackupAt = Date()
         } else {
             items[local] = item // still waiting on other parts
         }
@@ -181,6 +206,76 @@ final class BackupCoordinator: NSObject, ObservableObject {
             item.outstanding = []
             items[id] = item
         }
+    }
+
+    /// Loads backend storage usage (photos/videos/bytes stored on the server).
+    func loadBackendStats() async {
+        backendStats = try? await api.stats()
+    }
+
+    // MARK: - Free Up Space (Phase 2a)
+
+    /// Verified + still-on-device items, eligible for deletion.
+    var safeToDeleteItems: [BackupItem] {
+        items.values.filter { $0.safeToDelete && $0.byteSize > 0 }
+    }
+    var recoverableBytes: Int64 { safeToDeleteItems.reduce(0) { $0 + $1.byteSize } }
+    var safePhotoCount: Int { safeToDeleteItems.filter { $0.mediaType != "video" }.count }
+    var safeVideoCount: Int { safeToDeleteItems.filter { $0.mediaType == "video" }.count }
+
+    /// Confirms with the server which uploaded items are fully verified (`complete`),
+    /// and drops items no longer present in the photo library. Cheap: reads cached
+    /// state, one batched `/uploads/check`.
+    func reconcileFreeSpace() async {
+        guard !reconciling else { return }
+        reconciling = true
+        defer { reconciling = false; save() }
+
+        // 1. Mark items whose local asset is gone as deleted-from-device.
+        let ids = Array(items.keys)
+        let present = PhotoScanner.presentIdentifiers(ids)
+        for id in ids where !present.contains(id) {
+            items[id]?.deletedFromDevice = true
+        }
+
+        // 2. Reconcile verification for uploaded-but-unverified items.
+        let pending = items.values.filter { !$0.verified && !$0.deletedFromDevice && !$0.shas.isEmpty }
+        guard !pending.isEmpty else { return }
+
+        // Batched existence check; a sha "exists" only if a complete asset backs it.
+        var verifiedShas = Set<String>()
+        let allShas = Array(Set(pending.flatMap { $0.shas }))
+        for chunk in allShas.chunked(into: Config.checkBatchSize) {
+            let items = chunk.map { CheckItem(sha256: $0, byteSize: 0) }
+            if let results = try? await api.check(items) {
+                for r in results where r.exists { verifiedShas.insert(r.sha256) }
+            }
+        }
+        for item in pending where item.shas.allSatisfy({ verifiedShas.contains($0) }) {
+            items[item.id]?.verified = true
+        }
+    }
+
+    /// Deletes the given assets from the device via PhotoKit. iOS shows its own
+    /// system confirmation dialog. Returns true if the user confirmed + it succeeded.
+    func deleteFromDevice(ids: [String]) async -> Bool {
+        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        var phAssets: [PHAsset] = []
+        fetch.enumerateObjects { a, _, _ in phAssets.append(a) }
+        guard !phAssets.isEmpty else { return false }
+
+        let success: Bool = await withCheckedContinuation { cont in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets(phAssets as NSArray)
+            } completionHandler: { ok, _ in
+                cont.resume(returning: ok)
+            }
+        }
+        if success {
+            for id in ids { items[id]?.deletedFromDevice = true }
+            save()
+        }
+        return success
     }
 
     // MARK: Local queue

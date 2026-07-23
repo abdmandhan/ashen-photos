@@ -72,11 +72,13 @@ type createUploadRequest struct {
 	LivePhotoGroupID *string    `json:"live_photo_group_id"`
 }
 type createUploadResponse struct {
-	UploadID   string `json:"upload_id"`
-	AssetID    string `json:"asset_id"`
-	StorageKey string `json:"storage_key"`
-	PutURL     string `json:"put_url"`
-	ExpiresIn  int    `json:"expires_in"`
+	UploadID    string `json:"upload_id"`
+	AssetID     string `json:"asset_id"`
+	StorageKey  string `json:"storage_key"`
+	PutURL      string `json:"put_url"`
+	ThumbKey    string `json:"thumb_key"`
+	ThumbPutURL string `json:"thumb_put_url"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
 func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
@@ -135,12 +137,24 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Client-provided thumbnail slot: the app can PUT a JPEG thumbnail here (works
+	// for HEIC/video that the worker can't decode). Key mirrors the worker's scheme.
+	thumbKey := uid + "/" + in.SHA256 + ".jpg"
+	thumbPutURL, err := s.storage.PresignPut(r.Context(), s.storage.ThumbBucket(), thumbKey, presignTTL)
+	if err != nil {
+		log.Printf("presign thumb PUT failed key=%s: %v", thumbKey, err)
+		// Non-fatal: original upload still proceeds; worker falls back to generating.
+		thumbKey, thumbPutURL = "", ""
+	}
+
 	writeJSON(w, http.StatusCreated, createUploadResponse{
-		UploadID:   upload.ID,
-		AssetID:    asset.ID,
-		StorageKey: asset.StorageKey,
-		PutURL:     putURL,
-		ExpiresIn:  int(presignTTL.Seconds()),
+		UploadID:    upload.ID,
+		AssetID:     asset.ID,
+		StorageKey:  asset.StorageKey,
+		PutURL:      putURL,
+		ThumbKey:    thumbKey,
+		ThumbPutURL: thumbPutURL,
+		ExpiresIn:   int(presignTTL.Seconds()),
 	})
 }
 
@@ -148,6 +162,14 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 	uploadID := chiURLParam(r, "id")
+
+	// Optional body: {"thumb": true} means the client uploaded a thumbnail to the
+	// presigned thumb slot (used for HEIC/video the worker can't decode).
+	var in struct {
+		Thumb bool `json:"thumb"`
+	}
+	_ = decode(r, &in) // body optional; ignore decode errors
+
 	detail, err := s.store.UploadDetail(r.Context(), userID(r), uploadID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -166,6 +188,10 @@ func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	thumbKey := ""
+	if in.Thumb {
+		thumbKey = detail.UserID + "/" + detail.SHA256 + ".jpg"
+	}
 	if err := s.queue.EnqueueVerify(r.Context(), queue.VerifyJob{
 		UploadID:   detail.UploadID,
 		AssetID:    detail.AssetID,
@@ -174,6 +200,7 @@ func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
 		StorageKey: detail.StorageKey,
 		SHA256:     detail.SHA256,
 		MediaType:  detail.MediaType,
+		ThumbKey:   thumbKey,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "enqueue failed")
 		return

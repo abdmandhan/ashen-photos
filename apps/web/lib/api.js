@@ -41,12 +41,15 @@ export const api = {
   devices: () => req("/devices"),
   albums: () => req("/albums"),
   createAlbum: (name) => req("/albums", { method: "POST", body: { name } }),
+  deleteAlbum: (id) => req(`/albums/${id}`, { method: "DELETE" }),
   albumAssets: (id) => req(`/albums/${id}/assets`),
   addToAlbum: (albumId, assetId) =>
     req(`/albums/${albumId}/assets`, {
       method: "POST",
       body: { asset_id: assetId },
     }),
+  removeFromAlbum: (albumId, assetId) =>
+    req(`/albums/${albumId}/assets/${assetId}`, { method: "DELETE" }),
   favorite: (assetId, favorite) =>
     req(`/assets/${assetId}/favorite`, { method: "PUT", body: { favorite } }),
   duplicates: () => req("/duplicates"),

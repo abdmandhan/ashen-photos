@@ -73,6 +73,10 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/replication/status", s.handleReplicationStatus)
 		r.Post("/replication/redrive", s.handleReplicationRedrive)
+
+		r.Get("/thumbnails/missing", s.handleMissingThumbs)
+		r.Post("/thumbnails/presign", s.handlePresignThumb)
+		r.Post("/thumbnails/commit", s.handleCommitThumb)
 	})
 
 	return r

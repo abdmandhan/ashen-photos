@@ -21,8 +21,9 @@ final class UploadManager: NSObject {
 
     func start() { _ = session }
 
-    /// Uploads `fileURL` to `putURL` (a presigned PUT), tagging the task with the upload id.
-    func upload(fileURL: URL, to putURL: String, uploadID: String) {
+    /// Uploads `fileURL` to `putURL` (a presigned PUT), tagging the task with the
+    /// upload id and whether a thumbnail was already uploaded for it.
+    func upload(fileURL: URL, to putURL: String, uploadID: String, hasThumb: Bool = false) {
         guard let url = URL(string: putURL) else {
             onFinish?(uploadID, false, "Invalid upload URL")
             return
@@ -32,16 +33,17 @@ final class UploadManager: NSObject {
         req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
 
         let task = session.uploadTask(with: req, fromFile: fileURL)
-        task.taskDescription = "\(uploadID)|\(fileURL.path)"
+        task.taskDescription = "\(uploadID)|\(fileURL.path)|\(hasThumb ? "1" : "0")"
         task.resume()
     }
 }
 
 extension UploadManager: URLSessionDataDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let parts = (task.taskDescription ?? "").split(separator: "|", maxSplits: 1).map(String.init)
+        let parts = (task.taskDescription ?? "").split(separator: "|", maxSplits: 2).map(String.init)
         let uploadID = parts.first ?? ""
-        if parts.count == 2 { try? FileManager.default.removeItem(atPath: parts[1]) }
+        if parts.count >= 2 { try? FileManager.default.removeItem(atPath: parts[1]) }
+        let hasThumb = parts.count >= 3 && parts[2] == "1"
 
         let http = task.response as? HTTPURLResponse
         let code = http?.statusCode ?? 0
@@ -59,7 +61,7 @@ extension UploadManager: URLSessionDataDelegate {
             if ok {
                 // PUT landed; confirm with the API. A failed confirm means the object
                 // is orphaned + unverified — surface it so it retries, don't mark done.
-                if let confirmErr = await Self.callComplete(uploadID: uploadID) {
+                if let confirmErr = await Self.callComplete(uploadID: uploadID, thumb: hasThumb) {
                     finalOK = false
                     finalReason = "Uploaded but confirm failed: \(confirmErr)"
                 }
@@ -74,13 +76,13 @@ extension UploadManager: URLSessionDataDelegate {
 
     /// Signals the API the object landed; safe to call after a background relaunch
     /// (token from Keychain). Returns nil on success, or a reason string on failure.
-    private static func callComplete(uploadID: String) async -> String? {
+    private static func callComplete(uploadID: String, thumb: Bool) async -> String? {
         let api = APIClient(
             tokenProvider: { Keychain.get("token") },
             deviceIDProvider: { UserDefaults.standard.string(forKey: "device_id") }
         )
         do {
-            try await api.completeUpload(id: uploadID)
+            try await api.completeUpload(id: uploadID, thumb: thumb)
             return nil
         } catch {
             return error.localizedDescription

@@ -80,15 +80,54 @@ function Dashboard({ onLogout }) {
   const [dups, setDups] = useState([]);
   const [repl, setRepl] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);      // asset shown in lightbox
   const [albumView, setAlbumView] = useState(null);  // { album, assets }
   const [addMenu, setAddMenu] = useState(null);       // asset id whose add-to-album menu is open
 
-  async function loadAssets(key) {
-    const f = FILTERS.find((x) => x.key === key) || FILTERS[0];
-    const a = await api.assets(f.params);
-    setAssets(a.assets || []);
+  const PAGE = 100;
+
+  function buildParams(off) {
+    const f = FILTERS.find((x) => x.key === filter) || FILTERS[0];
+    const p = { limit: PAGE, offset: off, sort, ...f.params };
+    if (fromDate) p.from = `${fromDate}T00:00:00Z`;
+    if (toDate) p.to = `${toDate}T23:59:59Z`;
+    return p;
+  }
+
+  // Load the first page (on filter/sort/date change). Later pages append.
+  async function loadTimeline(nextFilter = filter) {
+    const f = FILTERS.find((x) => x.key === nextFilter) || FILTERS[0];
+    const p = { limit: PAGE, offset: 0, sort, ...f.params };
+    if (fromDate) p.from = `${fromDate}T00:00:00Z`;
+    if (toDate) p.to = `${toDate}T23:59:59Z`;
+    const a = await api.assets(p);
+    const list = a.assets || [];
+    setAssets(list);
+    setOffset(list.length);
+    setHasMore(list.length >= PAGE);
+  }
+
+  async function loadMore() {
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const a = await api.assets(buildParams(offset));
+      const list = a.assets || [];
+      setAssets((prev) => {
+        const seen = new Set(prev.map((x) => x.id));
+        return [...prev, ...list.filter((x) => !seen.has(x.id))];
+      });
+      setOffset((o) => o + list.length);
+      setHasMore(list.length >= PAGE);
+    } catch (e) { setError(e.message); }
+    finally { setLoadingMore(false); }
   }
 
   async function refreshMeta() {
@@ -104,15 +143,21 @@ function Dashboard({ onLogout }) {
     (async () => {
       try {
         await refreshMeta();
-        await loadAssets("all");
+        await loadTimeline("all");
       } catch (e) {
         setError(e.message);
       }
     })();
   }, []);
 
+  // Reload the first page whenever sort or the date range changes.
+  useEffect(() => {
+    loadTimeline().catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort, fromDate, toDate]);
+
   async function resolveDup(assetId, action) {
-    try { await api.resolveDuplicate(assetId, action); await refreshMeta(); await loadAssets(filter); }
+    try { await api.resolveDuplicate(assetId, action); await refreshMeta(); await loadTimeline(); }
     catch (e) { setError(e.message); }
   }
 
@@ -123,7 +168,7 @@ function Dashboard({ onLogout }) {
 
   async function selectFilter(key) {
     setFilter(key);
-    try { await loadAssets(key); } catch (e) { setError(e.message); }
+    try { await loadTimeline(key); } catch (e) { setError(e.message); }
   }
 
   async function toggleFavorite(asset, e) {
@@ -260,6 +305,24 @@ function Dashboard({ onLogout }) {
             </button>
           ))}
         </div>
+        <div className="toolbar">
+          <label className="tool">
+            Sort
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
+          <label className="tool">From
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label className="tool">To
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+          {(fromDate || toDate) && (
+            <button className="link" onClick={() => { setFromDate(""); setToDate(""); }}>Clear dates</button>
+          )}
+        </div>
         {assets.length === 0 && <div className="muted">Nothing here.</div>}
         <div className="grid">
           {assets.map((a) => (
@@ -296,6 +359,14 @@ function Dashboard({ onLogout }) {
             </div>
           ))}
         </div>
+        {hasMore && assets.length > 0 && (
+          <div style={{ textAlign: "center", marginTop: 16 }}>
+            <button className="btn" style={{ width: "auto", padding: "10px 24px" }}
+              onClick={loadMore} disabled={loadingMore}>
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        )}
       </div>
 
       {preview && (

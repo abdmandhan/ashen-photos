@@ -209,7 +209,12 @@ final class APIClient {
         var req = URLRequest(url: url(for: path))
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if authed, let token = tokenProvider() {
+        if authed {
+            // Fail fast: sending without a token just yields a server 401 with
+            // no hint the token was missing locally.
+            guard let token = tokenProvider() else {
+                throw APIError.status(401, #"{"error":"no local auth token"}"#)
+            }
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         // Device liveness: server bumps last_seen_at from this header.

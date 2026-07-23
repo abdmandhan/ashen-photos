@@ -26,6 +26,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var assets: [RemoteAsset] = []
     @Published private(set) var albums: [RemoteAlbum] = []
     @Published var filter: LibraryFilter = .all
+    @Published var sortOldest = false
+    @Published var fromDate: Date?
+    @Published var toDate: Date?
     @Published private(set) var loading = false
     @Published private(set) var loadingMore = false
     @Published private(set) var hasMore = true
@@ -46,11 +49,25 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    private static let iso = ISO8601DateFormatter()
+
     private func query(offset: Int) -> String {
         var items = ["limit=\(pageSize)", "offset=\(offset)"]
         if let p = filter.param { items.append(p) }
+        if sortOldest { items.append("sort=oldest") }
+        let cal = Calendar.current
+        if let f = fromDate {
+            items.append("from=" + Self.iso.string(from: cal.startOfDay(for: f)))
+        }
+        if let t = toDate,
+           let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: t) {
+            items.append("to=" + Self.iso.string(from: end))
+        }
         return "?" + items.joined(separator: "&")
     }
+
+    /// Reloads the first page after a sort/date change.
+    func applyFilters() { Task { await reloadAssets() } }
 
     func load() async {
         loading = true

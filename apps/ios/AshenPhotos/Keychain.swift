@@ -15,6 +15,9 @@ enum Keychain {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = data
+        // Readable after first unlock so background-session callbacks (upload
+        // completes while the device is locked) can still fetch the token.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(add as CFDictionary, nil)
     }
 

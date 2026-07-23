@@ -55,6 +55,12 @@ html, body {
 .section-header { display: flex; align-items: center; justify-content: space-between; }
 
 .filters { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.toolbar { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.tool { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.tool select, .tool input {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px;
+}
 .chip {
   padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);
   background: var(--panel); color: var(--text); font-size: 13px; cursor: pointer;

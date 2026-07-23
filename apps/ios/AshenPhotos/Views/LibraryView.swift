@@ -5,6 +5,7 @@ struct LibraryView: View {
     @State private var showNewAlbum = false
     @State private var newAlbumName = ""
     @State private var preview: RemoteAsset?
+    @State private var showDateFilter = false
 
     private let columns = [GridItem(.adaptive(minimum: 108), spacing: 3)]
 
@@ -22,6 +23,30 @@ struct LibraryView: View {
                     ForEach(LibraryFilter.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+                HStack {
+                    Menu {
+                        Picker("Sort", selection: Binding(
+                            get: { store.sortOldest },
+                            set: { store.sortOldest = $0; store.applyFilters() }
+                        )) {
+                            Text("Newest first").tag(false)
+                            Text("Oldest first").tag(true)
+                        }
+                    } label: {
+                        Label(store.sortOldest ? "Oldest" : "Newest", systemImage: "arrow.up.arrow.down")
+                            .font(.subheadline)
+                    }
+                    Spacer()
+                    Button {
+                        showDateFilter = true
+                    } label: {
+                        Label(dateLabel, systemImage: "calendar")
+                            .font(.subheadline)
+                    }
+                }
                 .padding(.horizontal)
                 .padding(.bottom, 8)
 
@@ -90,7 +115,53 @@ struct LibraryView: View {
             .fullScreenCover(item: $preview) { asset in
                 AssetPreviewView(assets: store.assets, current: asset.id)
             }
+            .sheet(isPresented: $showDateFilter) {
+                dateFilterSheet
+            }
         }
+    }
+
+    private var dateLabel: String {
+        if store.fromDate != nil || store.toDate != nil { return "Dates ✓" }
+        return "Dates"
+    }
+
+    private var dateFilterSheet: some View {
+        NavigationStack {
+            Form {
+                Section("From") {
+                    Toggle("Filter start date", isOn: Binding(
+                        get: { store.fromDate != nil },
+                        set: { store.fromDate = $0 ? (store.fromDate ?? Date()) : nil }))
+                    if store.fromDate != nil {
+                        DatePicker("Start", selection: Binding(
+                            get: { store.fromDate ?? Date() }, set: { store.fromDate = $0 }),
+                            displayedComponents: .date)
+                    }
+                }
+                Section("To") {
+                    Toggle("Filter end date", isOn: Binding(
+                        get: { store.toDate != nil },
+                        set: { store.toDate = $0 ? (store.toDate ?? Date()) : nil }))
+                    if store.toDate != nil {
+                        DatePicker("End", selection: Binding(
+                            get: { store.toDate ?? Date() }, set: { store.toDate = $0 }),
+                            displayedComponents: .date)
+                    }
+                }
+            }
+            .navigationTitle("Filter by date")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Clear") { store.fromDate = nil; store.toDate = nil }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Apply") { store.applyFilters(); showDateFilter = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     private var albumsRow: some View {

@@ -24,6 +24,9 @@ final class AuthStore: ObservableObject {
             UserDefaults.standard.set(env["ASHEN_DEBUG_USER"] ?? "debug", forKey: "user_id")
         }
         token = Keychain.get("token")
+        // Re-save to upgrade legacy tokens to AfterFirstUnlock accessibility
+        // (set deletes + re-adds, rewriting the item with the new class).
+        if let token { Keychain.set(token, for: "token") }
         userID = UserDefaults.standard.string(forKey: "user_id")
         deviceID = UserDefaults.standard.string(forKey: "device_id")
     }

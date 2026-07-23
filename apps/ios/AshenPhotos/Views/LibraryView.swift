@@ -33,9 +33,17 @@ struct LibraryView: View {
                     LazyVGrid(columns: columns, spacing: 3) {
                         ForEach(store.assets) { asset in
                             tile(asset)
+                                .onAppear {
+                                    if asset.id == store.assets.last?.id {
+                                        Task { await store.loadMore() }
+                                    }
+                                }
                         }
                     }
                     .padding(.horizontal, 3)
+                    if store.loadingMore {
+                        ProgressView().padding()
+                    }
                 }
             }
             .navigationTitle("Library")

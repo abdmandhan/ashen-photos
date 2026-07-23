@@ -23,10 +23,15 @@ final class BackupCoordinator: NSObject, ObservableObject {
     // Owns the backup run so it survives view/tab changes (not tied to a SwiftUI .task).
     private var backupTask: Task<Void, Never>?
 
+    /// The active coordinator, so background tasks can reuse it instead of
+    /// building a second one that double-registers UploadManager callbacks.
+    static weak var shared: BackupCoordinator?
+
     init(auth: AuthStore, settings: SettingsStore) {
         self.auth = auth
         self.settings = settings
         super.init()
+        Self.shared = self
         load()
         lastBackupAt = UserDefaults.standard.object(forKey: "last_backup_at") as? Date
         UploadManager.shared.onFinish = { [weak self] uploadID, ok, reason in
@@ -91,6 +96,14 @@ final class BackupCoordinator: NSObject, ObservableObject {
             await self?.run()
             self?.backupTask = nil
         }
+    }
+
+    /// Entry point for BGTaskScheduler. Reuses the live coordinator if present,
+    /// else builds one from the stored session. No-op if logged out.
+    static func runBackgroundBackup() async {
+        guard Keychain.get("token") != nil else { return }
+        let coordinator = shared ?? BackupCoordinator(auth: AuthStore(), settings: SettingsStore())
+        await coordinator.run()
     }
 
     func run() async {

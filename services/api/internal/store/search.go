@@ -17,6 +17,7 @@ type AssetFilter struct {
 	DeviceID  string
 	Limit     int
 	Before    *time.Time // keyset cursor
+	Offset    int        // page offset (simple pagination, robust to null captured_at)
 }
 
 // ListAssetsFiltered returns completed assets matching the filter, newest-first,
@@ -69,6 +70,9 @@ func (s *Store) ListAssetsFiltered(ctx context.Context, userID string, f AssetFi
 	      FROM assets a` + join +
 		` WHERE ` + strings.Join(conds, " AND ") +
 		` ORDER BY a.captured_at DESC NULLS LAST, a.id DESC LIMIT ` + itoa(limit)
+	if f.Offset > 0 {
+		q += ` OFFSET ` + itoa(f.Offset)
+	}
 
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {

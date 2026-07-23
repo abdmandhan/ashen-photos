@@ -11,12 +11,12 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
         case .favorites: return "Favorites"
         }
     }
-    var query: String {
+    var param: String? {
         switch self {
-        case .all: return ""
-        case .photos: return "?media_type=photo"
-        case .videos: return "?media_type=video"
-        case .favorites: return "?favorite=true"
+        case .all: return nil
+        case .photos: return "media_type=photo"
+        case .videos: return "media_type=video"
+        case .favorites: return "favorite=true"
         }
     }
 }
@@ -27,11 +27,15 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var albums: [RemoteAlbum] = []
     @Published var filter: LibraryFilter = .all
     @Published private(set) var loading = false
+    @Published private(set) var loadingMore = false
+    @Published private(set) var hasMore = true
     @Published var error: String?
     @Published var backfillStatus: String?
     @Published private(set) var backfilling = false
 
     private let api: APIClient
+    private let pageSize = 100
+    private var offset = 0
 
     init(auth: AuthStore) {
         self.api = auth.client()
@@ -42,13 +46,22 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    private func query(offset: Int) -> String {
+        var items = ["limit=\(pageSize)", "offset=\(offset)"]
+        if let p = filter.param { items.append(p) }
+        return "?" + items.joined(separator: "&")
+    }
+
     func load() async {
         loading = true
         defer { loading = false }
         do {
-            async let a = api.listAssets(query: filter.query)
+            async let a = api.listAssets(query: query(offset: 0))
             async let al = api.listAlbums()
-            assets = try await a
+            let first = try await a
+            assets = first
+            offset = first.count
+            hasMore = first.count >= pageSize
             albums = try await al
             error = nil
         } catch {
@@ -56,16 +69,36 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Loads the next page and appends (infinite scroll).
+    func loadMore() async {
+        guard hasMore, !loadingMore, !loading else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        do {
+            let next = try await api.listAssets(query: query(offset: offset))
+            let existing = Set(assets.map(\.id))
+            assets.append(contentsOf: next.filter { !existing.contains($0.id) })
+            offset += next.count
+            hasMore = next.count >= pageSize
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     /// Sets the filter synchronously (so the segmented control updates immediately)
-    /// then reloads. The async variant snapped the picker back before `filter` changed.
+    /// then reloads from the first page.
     func setFilter(_ f: LibraryFilter) {
         filter = f
         Task { await reloadAssets() }
     }
 
     private func reloadAssets() async {
-        do { assets = try await api.listAssets(query: filter.query) }
-        catch { self.error = error.localizedDescription }
+        do {
+            let a = try await api.listAssets(query: query(offset: 0))
+            assets = a
+            offset = a.count
+            hasMore = a.count >= pageSize
+        } catch { self.error = error.localizedDescription }
     }
 
     func toggleFavorite(_ asset: RemoteAsset) async {

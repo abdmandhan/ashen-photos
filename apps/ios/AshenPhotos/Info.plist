@@ -52,5 +52,9 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>test.ashen.photos.backup</string>
+	</array>
 </dict>
 </plist>

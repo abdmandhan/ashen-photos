@@ -30,6 +30,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		AlbumID:   q.Get("album_id"),
 		DeviceID:  q.Get("device_id"),
 		Limit:     atoi(q.Get("limit")),
+		Offset:    atoi(q.Get("offset")),
 		From:      parseTime(q.Get("from")),
 		To:        parseTime(q.Get("to")),
 		Before:    parseTime(q.Get("before")),

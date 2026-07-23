@@ -91,6 +91,47 @@ struct DeviceResponse: Decodable {
     let name: String
 }
 
+// MARK: - Library (browse) DTOs
+
+struct RemoteAsset: Decodable, Identifiable {
+    let id: String
+    let mediaType: String
+    let capturedAt: Date?
+    var favorite: Bool
+    let thumbURL: String?
+    let downloadURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case mediaType = "media_type"
+        case capturedAt = "captured_at"
+        case favorite
+        case thumbURL = "thumb_url"
+        case downloadURL = "download_url"
+    }
+}
+
+struct AssetsResponse: Decodable {
+    let assets: [RemoteAsset]
+}
+
+struct RemoteAlbum: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let assetCount: Int
+    let coverURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case assetCount = "asset_count"
+        case coverURL = "cover_url"
+    }
+}
+
+struct AlbumsResponse: Decodable {
+    let albums: [RemoteAlbum]
+}
+
 // MARK: - Local backup state
 
 enum BackupState: String, Codable {

@@ -81,6 +81,30 @@ final class APIClient {
         _ = try await request(path: "/uploads/\(id)/complete", method: "POST", body: Optional<Data>.none, authed: true)
     }
 
+    // MARK: Library
+
+    func listAssets(query: String = "") async throws -> [RemoteAsset] {
+        let data = try await request(path: "/assets\(query)", method: "GET", body: Optional<Data>.none, authed: true)
+        return (try Self.decoder.decode(AssetsResponse.self, from: data)).assets
+    }
+
+    func listAlbums() async throws -> [RemoteAlbum] {
+        let data = try await request(path: "/albums", method: "GET", body: Optional<Data>.none, authed: true)
+        return (try Self.decoder.decode(AlbumsResponse.self, from: data)).albums
+    }
+
+    func setFavorite(assetID: String, favorite: Bool) async throws {
+        struct Body: Encodable { let favorite: Bool }
+        _ = try await request(path: "/assets/\(assetID)/favorite", method: "PUT",
+                              body: try Self.encoder.encode(Body(favorite: favorite)), authed: true)
+    }
+
+    func createAlbum(name: String) async throws {
+        struct Body: Encodable { let name: String }
+        _ = try await request(path: "/albums", method: "POST",
+                              body: try Self.encoder.encode(Body(name: name)), authed: true)
+    }
+
     // MARK: Core
 
     private func post<B: Encodable, R: Decodable>(_ path: String, body: B, authed: Bool = true) async throws -> R {

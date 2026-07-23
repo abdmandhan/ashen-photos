@@ -2,7 +2,7 @@
 
 > Goal: turn the reliable backup from Phase 1 into a real photo library — organize (albums, favorites), find (metadata search), trust (duplicate detection, multi-device), and protect (off-site replication).
 
-> **Status: 🚧 IN PROGRESS** — P2-1 (albums+favorites) and P2-2 (search) done + verified. Web UI (P2-6) has albums, favorites, and filters live. Remaining: P2-3 multi-device, P2-4 duplicates, P2-5 replication, iOS UI.
+> **Status: ✅ COMPLETE** — P2-1 through P2-6 all done and verified against real infra on `nuc.test`. Web dashboard + iOS app cover albums, favorites, search/filter, multi-device, duplicate review, and replication.
 
 **Progress:**
 - ✅ **P2-1 Albums+Favorites** — migration `0003`, full CRUD + membership + favorite toggle. Curl-verified E2E.
@@ -10,7 +10,7 @@
 - ✅ **P2-3 Multi-device** — `asset_devices` join (migration `0004`), `last_seen_at` via `X-Device-Id` header, per-device `uploaded_count` in `GET /devices`, `PATCH /devices/:id` rename, dedup reconciliation (device B seeing an existing asset is recorded without re-upload). Verified E2E.
 - ✅ **P2-4 Duplicates** — worker computes dHash (64-bit), groups same-dimension assets within Hamming ≤10 into a `dup_group_id` (migration `0005`: `phash`, `dup_group_id`, `deleted_at`). `GET /duplicates`, `POST /assets/:id/resolve-duplicate` (delete=soft-delete / keep=dismiss). Soft-deleted assets excluded from timeline/stats/facets/dedup. Verified E2E on an isolated queue.
 - ✅ **P2-5 Replication** — worker replicates each completed asset to a secondary target (migration `0006`: `asset_replicas`); chained via a `ashen:replicate:queue`; `GET /replication/status` + `POST /replication/redrive` (re-queues failed/missing). Idempotent, size-verified. Enabled by `REPLICA_*` env (off if unset). Verified E2E incl. failure→redrive recovery.
-- 🚧 **P2-6 Web** — albums, favorites, filters, **duplicates review (Keep/Delete), replication status widget + redrive, per-device counts + last-seen** — all live + browser-verified. **iOS UI (favorite/albums) still pending.**
+- ✅ **P2-6 UI** — Web: albums, favorites, filters, duplicates review (Keep/Delete), replication status + redrive, per-device counts + last-seen (browser-verified). iOS: Library tab with thumbnail grid, favorite toggle, All/Photos/Videos/Favorites filter, albums row, new-album (build-verified on sim).
 
 **Infra note:** added `ASHEN_QUEUE_KEY` env override (API + worker) so a test pipeline can run on a private Redis list without the production worker stealing jobs.
 
@@ -165,7 +165,7 @@ New status values stay within existing `assets.status`; soft-delete via `deleted
 | P2-3 | Multi-device     | `last_seen_at`, per-device counts, `asset_devices` reconciliation. | ✅ done |
 | P2-4 | Duplicates       | `phash` + near-dup grouping + review/resolve endpoints.            | ✅ done |
 | P2-5 | Replication      | second target, `replicate` job, status + redrive.                 | ✅ done |
-| P2-6 | UI               | Web complete (albums, favorites, filters, dupes, repl, devices) ✅. iOS UI pending. | 🚧 web done |
+| P2-6 | UI               | Web complete + iOS Library tab (grid, favorites, filters, albums). | ✅ done |
 
 P2-1 and P2-2 are independent and can go first (pure API). P2-3/P2-4/P2-5 each touch the worker or middleware. P2-6 lands after its backing endpoints are stable.
 

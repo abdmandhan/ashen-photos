@@ -20,6 +20,8 @@ final class BackupCoordinator: NSObject, ObservableObject {
 
     // uploadID -> localIdentifier, so upload completion maps back to an item.
     private var uploadToLocal: [String: String] = [:]
+    // Owns the backup run so it survives view/tab changes (not tied to a SwiftUI .task).
+    private var backupTask: Task<Void, Never>?
 
     init(auth: AuthStore, settings: SettingsStore) {
         self.auth = auth
@@ -55,7 +57,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
     }
 
     /// Force-retry all failed items now (resets the retry cap), then rescan.
-    func retryFailedNow() async {
+    func retryFailedNow() {
         for (id, var item) in items where item.state == .failed {
             item.state = .pending
             item.retryCount = 0
@@ -63,7 +65,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
             item.errorMessage = nil
             items[id] = item
         }
-        await run()
+        startBackup()
     }
 
     // MARK: Pause / resume
@@ -75,10 +77,21 @@ final class BackupCoordinator: NSObject, ObservableObject {
 
     func resume() {
         paused = false
-        Task { await run() }
+        startBackup()
     }
 
     // MARK: Run
+
+    /// Starts a backup in a coordinator-owned task. Safe to call repeatedly (e.g.
+    /// from a tab's onAppear or the photo-library observer) — it no-ops if already
+    /// running, and is NOT cancelled when the view disappears.
+    func startBackup() {
+        guard backupTask == nil, !running, !paused else { return }
+        backupTask = Task { @MainActor [weak self] in
+            await self?.run()
+            self?.backupTask = nil
+        }
+    }
 
     func run() async {
         guard !running else { return }
@@ -168,9 +181,22 @@ final class BackupCoordinator: NSObject, ObservableObject {
             if allExisted { updated.verified = true; lastBackupAt = Date() }
             items[id] = updated
         } catch {
-            markFailed(id, reason: error.localizedDescription)
+            if isCancellation(error) {
+                // Interrupted (tab switch, backgrounding) — leave pending to resume,
+                // don't treat as a real failure.
+                items[id]?.state = .pending
+                items[id]?.outstanding = []
+            } else {
+                markFailed(id, reason: error.localizedDescription)
+            }
         }
         save()
+    }
+
+    private func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlErr = error as? URLError, urlErr.code == .cancelled { return true }
+        return false
     }
 
     // MARK: Upload completion
@@ -195,7 +221,15 @@ final class BackupCoordinator: NSObject, ObservableObject {
         item.outstanding.removeAll { $0 == uploadID }
 
         if !ok {
-            markFailed(local, reason: reason ?? "Upload failed")
+            let r = reason ?? "Upload failed"
+            if r.localizedCaseInsensitiveContains("cancel") {
+                // Transient interruption — retry on the next run, don't mark failed.
+                item.state = .pending
+                item.outstanding = []
+                items[local] = item
+            } else {
+                markFailed(local, reason: r)
+            }
         } else if item.outstanding.isEmpty {
             item.state = .done
             item.errorMessage = nil
@@ -338,9 +372,6 @@ final class BackupCoordinator: NSObject, ObservableObject {
 
 extension BackupCoordinator: PHPhotoLibraryChangeObserver {
     nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
-        Task { @MainActor in
-            guard !self.running else { return }
-            await self.run()
-        }
+        Task { @MainActor in self.startBackup() }
     }
 }

@@ -31,7 +31,7 @@ struct BackupView: View {
 
                     HStack(spacing: 12) {
                         Button {
-                            Task { await coordinator.run() }
+                            coordinator.startBackup()
                         } label: {
                             Label(coordinator.running ? "Backing up…" : "Back up now",
                                   systemImage: "icloud.and.arrow.up")
@@ -69,7 +69,7 @@ struct BackupView: View {
                 .padding()
             }
             .navigationTitle("Backup")
-            .task { await coordinator.run() }
+            .onAppear { coordinator.startBackup() }
         }
     }
 
@@ -118,7 +118,7 @@ struct BackupView: View {
                 Text("Failed (\(coordinator.failedItems.count))")
                     .font(.headline)
                 Spacer()
-                Button("Retry all") { Task { await coordinator.retryFailedNow() } }
+                Button("Retry all") { coordinator.retryFailedNow() }
                     .font(.footnote)
                     .disabled(coordinator.running)
             }

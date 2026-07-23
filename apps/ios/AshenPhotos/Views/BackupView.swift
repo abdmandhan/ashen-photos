@@ -58,6 +58,10 @@ struct BackupView: View {
                         }
                     }
 
+                    if !coordinator.inProgressItems.isEmpty {
+                        processingSection
+                    }
+
                     if !coordinator.failedItems.isEmpty {
                         failedSection
                     }
@@ -66,6 +70,45 @@ struct BackupView: View {
             }
             .navigationTitle("Backup")
             .task { await coordinator.run() }
+        }
+    }
+
+    private var processingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Processing (\(coordinator.inProgressItems.count))")
+                .font(.headline)
+            ForEach(coordinator.inProgressItems) { item in
+                HStack(spacing: 10) {
+                    LocalThumbnail(localIdentifier: item.id, side: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Label(mediaLabel(item.mediaType),
+                                  systemImage: icon(item.mediaType))
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(Int(item.progress * 100))%")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: item.progress)
+                    }
+                }
+            }
+        }
+    }
+
+    private func mediaLabel(_ t: String) -> String {
+        switch t {
+        case "video": return "Video"
+        case "live": return "Live Photo"
+        default: return "Photo"
+        }
+    }
+    private func icon(_ t: String) -> String {
+        switch t {
+        case "video": return "video"
+        case "live": return "livephoto"
+        default: return "photo"
         }
     }
 

@@ -9,6 +9,9 @@ final class UploadManager: NSObject {
     /// Called on the main actor when an upload finishes. `reason` is nil on success.
     var onFinish: ((_ uploadID: String, _ success: Bool, _ reason: String?) -> Void)?
 
+    /// Called as bytes are sent, with a 0...1 fraction per upload id.
+    var onProgress: ((_ uploadID: String, _ fraction: Double) -> Void)?
+
     /// Set by the AppDelegate for background-session completion.
     var backgroundCompletion: (() -> Void)?
 
@@ -68,6 +71,15 @@ extension UploadManager: URLSessionDataDelegate {
             }
             self.onFinish?(uploadID, finalOK, finalReason)
         }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didSendBodyData bytesSent: Int64, totalBytesSent: Int64,
+                    totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        let frac = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
+        let uploadID = (task.taskDescription ?? "").split(separator: "|").first.map(String.init) ?? ""
+        Task { @MainActor in self.onProgress?(uploadID, frac) }
     }
 
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

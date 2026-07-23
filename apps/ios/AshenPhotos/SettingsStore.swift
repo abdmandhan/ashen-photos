@@ -11,6 +11,10 @@ final class SettingsStore: ObservableObject {
     @Published var chargingOnly: Bool {
         didSet { UserDefaults.standard.set(chargingOnly, forKey: "charging_only") }
     }
+    /// How many assets to process (export/hash/upload) concurrently.
+    @Published var backupConcurrency: Int {
+        didSet { UserDefaults.standard.set(backupConcurrency, forKey: "backup_concurrency") }
+    }
     @Published private(set) var onWifi = false
 
     private let monitor = NWPathMonitor()
@@ -18,6 +22,7 @@ final class SettingsStore: ObservableObject {
     init() {
         wifiOnly = UserDefaults.standard.object(forKey: "wifi_only") as? Bool ?? true
         chargingOnly = UserDefaults.standard.object(forKey: "charging_only") as? Bool ?? false
+        backupConcurrency = max(1, UserDefaults.standard.object(forKey: "backup_concurrency") as? Int ?? 3)
         UIDevice.current.isBatteryMonitoringEnabled = true
         monitor.pathUpdateHandler = { [weak self] path in
             let wifi = path.usesInterfaceType(.wifi)

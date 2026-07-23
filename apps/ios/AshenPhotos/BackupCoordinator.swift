@@ -30,6 +30,9 @@ final class BackupCoordinator: NSObject, ObservableObject {
         UploadManager.shared.onFinish = { [weak self] uploadID, ok, reason in
             Task { @MainActor in self?.handleFinish(uploadID: uploadID, ok: ok, reason: reason) }
         }
+        UploadManager.shared.onProgress = { [weak self] uploadID, fraction in
+            Task { @MainActor in self?.handleProgress(uploadID: uploadID, fraction: fraction) }
+        }
         UploadManager.shared.start()
     }
 
@@ -96,20 +99,22 @@ final class BackupCoordinator: NSObject, ObservableObject {
         mergeAssets(assets)
         retryFailed()
 
-        for asset in assets {
-            if paused {
-                statusLine = "Paused"
-                return
+        // Process assets in concurrent batches of `backupConcurrency`. Heavy work
+        // (export, hash, network) suspends at await points, so a batch interleaves.
+        let pending = assets.filter { items[$0.localIdentifier]?.state == .pending }
+        let limit = max(1, settings.backupConcurrency)
+
+        for batch in pending.chunked(into: limit) {
+            if paused || !settings.canUpload { break }
+            await withTaskGroup(of: Void.self) { group in
+                for asset in batch where items[asset.localIdentifier]?.state == .pending {
+                    group.addTask { @MainActor in await self.process(asset) }
+                }
             }
-            if !settings.canUpload {
-                statusLine = "Paused (waiting for Wi-Fi/charging)"
-                break
-            }
-            guard let item = items[asset.localIdentifier], item.state == .pending else { continue }
-            await process(asset)
         }
 
         if paused { statusLine = "Paused"; return }
+        if !settings.canUpload { statusLine = "Paused (waiting for Wi-Fi/charging)"; return }
         statusLine = remaining > 0 ? "Uploading in background…" : "Backup complete"
     }
 
@@ -170,6 +175,20 @@ final class BackupCoordinator: NSObject, ObservableObject {
 
     // MARK: Upload completion
 
+    private func handleProgress(uploadID: String, fraction: Double) {
+        guard let local = uploadToLocal[uploadID], var item = items[local] else { return }
+        // Only move forward; avoids flicker when parts report out of order.
+        if fraction > item.progress {
+            item.progress = fraction
+            items[local] = item
+        }
+    }
+
+    /// Items currently exporting/uploading, for the live progress list.
+    var inProgressItems: [BackupItem] {
+        items.values.filter { $0.state == .uploading }.sorted { $0.id < $1.id }
+    }
+
     private func handleFinish(uploadID: String, ok: Bool, reason: String?) {
         guard let local = uploadToLocal[uploadID], var item = items[local] else { return }
         uploadToLocal[uploadID] = nil
@@ -180,6 +199,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
         } else if item.outstanding.isEmpty {
             item.state = .done
             item.errorMessage = nil
+            item.progress = 1
             items[local] = item
             lastBackupAt = Date()
         } else {

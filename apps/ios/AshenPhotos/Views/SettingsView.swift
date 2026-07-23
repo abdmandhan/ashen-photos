@@ -26,6 +26,8 @@ struct SettingsView: View {
                 Section("Upload conditions") {
                     Toggle("Wi-Fi only", isOn: $settings.wifiOnly)
                     Toggle("Charging only", isOn: $settings.chargingOnly)
+                    Stepper("Batch size: \(settings.backupConcurrency)",
+                            value: $settings.backupConcurrency, in: 1...8)
                 }
                 Section("Network") {
                     HStack {

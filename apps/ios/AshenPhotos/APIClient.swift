@@ -116,9 +116,17 @@ final class APIClient {
         }
     }
 
+    /// Builds a full URL. Uses string concatenation (not appendingPathComponent,
+    /// which percent-encodes "?" and breaks query strings). `path` starts with "/".
+    private func url(for path: String) -> URL {
+        var s = base.absoluteString
+        if s.hasSuffix("/") { s.removeLast() }
+        return URL(string: s + path) ?? base
+    }
+
     @discardableResult
     private func request(path: String, method: String, body: Data?, authed: Bool) async throws -> Data {
-        var req = URLRequest(url: base.appendingPathComponent(path))
+        var req = URLRequest(url: url(for: path))
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if authed, let token = tokenProvider() {

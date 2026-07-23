@@ -17,7 +17,7 @@ struct LibraryView: View {
 
                 Picker("Filter", selection: Binding(
                     get: { store.filter },
-                    set: { f in Task { await store.setFilter(f) } }
+                    set: { store.setFilter($0) }
                 )) {
                     ForEach(LibraryFilter.allCases) { Text($0.title).tag($0) }
                 }
@@ -61,7 +61,7 @@ struct LibraryView: View {
                 Button("Cancel", role: .cancel) { newAlbumName = "" }
             }
             .fullScreenCover(item: $preview) { asset in
-                AssetPreviewView(asset: asset)
+                AssetPreviewView(assets: store.assets, current: asset.id)
             }
         }
     }

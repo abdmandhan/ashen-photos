@@ -31,7 +31,14 @@ final class LibraryStore: ObservableObject {
 
     private let api: APIClient
 
-    init(auth: AuthStore) { self.api = auth.client() }
+    init(auth: AuthStore) {
+        self.api = auth.client()
+        // Debug: start on a given filter for screenshots.
+        if let f = ProcessInfo.processInfo.environment["ASHEN_DEBUG_FILTER"],
+           let lf = LibraryFilter(rawValue: f) {
+            filter = lf
+        }
+    }
 
     func load() async {
         loading = true
@@ -47,9 +54,15 @@ final class LibraryStore: ObservableObject {
         }
     }
 
-    func setFilter(_ f: LibraryFilter) async {
+    /// Sets the filter synchronously (so the segmented control updates immediately)
+    /// then reloads. The async variant snapped the picker back before `filter` changed.
+    func setFilter(_ f: LibraryFilter) {
         filter = f
-        do { assets = try await api.listAssets(query: f.query) }
+        Task { await reloadAssets() }
+    }
+
+    private func reloadAssets() async {
+        do { assets = try await api.listAssets(query: filter.query) }
         catch { self.error = error.localizedDescription }
     }
 

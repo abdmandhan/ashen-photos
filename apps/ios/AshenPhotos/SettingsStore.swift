@@ -15,6 +15,10 @@ final class SettingsStore: ObservableObject {
     @Published var backupConcurrency: Int {
         didSet { UserDefaults.standard.set(backupConcurrency, forKey: "backup_concurrency") }
     }
+    /// Back up oldest photos/videos first (else newest first).
+    @Published var oldestFirst: Bool {
+        didSet { UserDefaults.standard.set(oldestFirst, forKey: "oldest_first") }
+    }
     @Published private(set) var onWifi = false
 
     private let monitor = NWPathMonitor()
@@ -23,6 +27,7 @@ final class SettingsStore: ObservableObject {
         wifiOnly = UserDefaults.standard.object(forKey: "wifi_only") as? Bool ?? true
         chargingOnly = UserDefaults.standard.object(forKey: "charging_only") as? Bool ?? false
         backupConcurrency = max(1, UserDefaults.standard.object(forKey: "backup_concurrency") as? Int ?? 3)
+        oldestFirst = UserDefaults.standard.bool(forKey: "oldest_first")
         UIDevice.current.isBatteryMonitoringEnabled = true
         monitor.pathUpdateHandler = { [weak self] path in
             let wifi = path.usesInterfaceType(.wifi)

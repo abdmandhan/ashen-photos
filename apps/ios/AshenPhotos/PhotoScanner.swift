@@ -61,10 +61,10 @@ enum PhotoScanner {
         return present
     }
 
-    /// All photos + videos, newest first.
-    static func fetchAssets() -> [PHAsset] {
+    /// All photos + videos. `oldestFirst` backs up older memories first.
+    static func fetchAssets(oldestFirst: Bool = false) -> [PHAsset] {
         let opts = PHFetchOptions()
-        opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: oldestFirst)]
         opts.predicate = NSPredicate(format: "mediaType == %d OR mediaType == %d",
                                      PHAssetMediaType.image.rawValue,
                                      PHAssetMediaType.video.rawValue)

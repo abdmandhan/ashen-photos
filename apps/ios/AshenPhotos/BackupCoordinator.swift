@@ -121,7 +121,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
         PHPhotoLibrary.shared().register(self)
 
         statusLine = "Scanning library…"
-        let assets = PhotoScanner.fetchAssets()
+        let assets = PhotoScanner.fetchAssets(oldestFirst: settings.oldestFirst)
         mergeAssets(assets)
         retryFailed()
 

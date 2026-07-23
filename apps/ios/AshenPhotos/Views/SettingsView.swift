@@ -28,6 +28,7 @@ struct SettingsView: View {
                     Toggle("Charging only", isOn: $settings.chargingOnly)
                     Stepper("Batch size: \(settings.backupConcurrency)",
                             value: $settings.backupConcurrency, in: 1...8)
+                    Toggle("Back up oldest first", isOn: $settings.oldestFirst)
                 }
                 Section("Network") {
                     HStack {

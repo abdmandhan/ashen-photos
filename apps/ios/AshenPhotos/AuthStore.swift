@@ -16,6 +16,13 @@ final class AuthStore: ObservableObject {
     )
 
     init() {
+        // Debug hook: pre-seed a token from the environment (used for UI screenshots
+        // against a local API). No-op unless ASHEN_DEBUG_TOKEN is set.
+        let env = ProcessInfo.processInfo.environment
+        if let t = env["ASHEN_DEBUG_TOKEN"], !t.isEmpty {
+            Keychain.set(t, for: "token")
+            UserDefaults.standard.set(env["ASHEN_DEBUG_USER"] ?? "debug", forKey: "user_id")
+        }
         token = Keychain.get("token")
         userID = UserDefaults.standard.string(forKey: "user_id")
         deviceID = UserDefaults.standard.string(forKey: "device_id")

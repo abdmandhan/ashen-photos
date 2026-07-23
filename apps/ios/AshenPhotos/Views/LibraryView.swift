@@ -4,6 +4,7 @@ struct LibraryView: View {
     @ObservedObject var store: LibraryStore
     @State private var showNewAlbum = false
     @State private var newAlbumName = ""
+    @State private var preview: RemoteAsset?
 
     private let columns = [GridItem(.adaptive(minimum: 108), spacing: 3)]
 
@@ -44,7 +45,13 @@ struct LibraryView: View {
                 }
             }
             .refreshable { await store.load() }
-            .task { await store.load() }
+            .task {
+                await store.load()
+                // Debug: auto-open a preview for screenshots.
+                if ProcessInfo.processInfo.environment["ASHEN_DEBUG_PREVIEW"] == "1" {
+                    preview = store.assets.first
+                }
+            }
             .alert("New album", isPresented: $showNewAlbum) {
                 TextField("Name", text: $newAlbumName)
                 Button("Create") {
@@ -52,6 +59,9 @@ struct LibraryView: View {
                     Task { await store.createAlbum(name: n) }
                 }
                 Button("Cancel", role: .cancel) { newAlbumName = "" }
+            }
+            .fullScreenCover(item: $preview) { asset in
+                AssetPreviewView(asset: asset)
             }
         }
     }
@@ -80,34 +90,38 @@ struct LibraryView: View {
     }
 
     private func tile(_ asset: RemoteAsset) -> some View {
-        ZStack(alignment: .topTrailing) {
-            AsyncImage(url: asset.thumbURL.flatMap(URL.init)) { img in
-                img.resizable().scaledToFill()
-            } placeholder: {
-                Rectangle().fill(.gray.opacity(0.15))
+        // Square cell sized by the grid column; the image fills + clips inside it.
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                AsyncImage(url: asset.thumbURL.flatMap(URL.init)) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(.gray.opacity(0.15))
+                }
             }
-            .frame(minWidth: 0, maxWidth: .infinity)
-            .aspectRatio(1, contentMode: .fill)
             .clipped()
-
-            Button {
-                Task { await store.toggleFavorite(asset) }
-            } label: {
-                Image(systemName: asset.favorite ? "heart.fill" : "heart")
-                    .font(.footnote)
-                    .foregroundStyle(asset.favorite ? .pink : .white)
-                    .padding(6)
-                    .background(.black.opacity(0.35), in: Circle())
+            .contentShape(Rectangle())
+            .onTapGesture { preview = asset }
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    Task { await store.toggleFavorite(asset) }
+                } label: {
+                    Image(systemName: asset.favorite ? "heart.fill" : "heart")
+                        .font(.footnote)
+                        .foregroundStyle(asset.favorite ? .pink : .white)
+                        .padding(6)
+                        .background(.black.opacity(0.35), in: Circle())
+                }
+                .padding(4)
             }
-            .padding(4)
-
-            if asset.mediaType == "video" {
-                Image(systemName: "play.fill")
-                    .font(.caption2).foregroundStyle(.white)
-                    .padding(4).background(.black.opacity(0.4), in: Circle())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(4)
+            .overlay(alignment: .bottomTrailing) {
+                if asset.mediaType == "video" {
+                    Image(systemName: "play.fill")
+                        .font(.caption2).foregroundStyle(.white)
+                        .padding(4).background(.black.opacity(0.4), in: Circle())
+                        .padding(4)
+                }
             }
-        }
     }
 }

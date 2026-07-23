@@ -1,5 +1,6 @@
 import SwiftUI
 import Photos
+import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthStore
@@ -17,6 +18,13 @@ struct SettingsView: View {
                             PhotoScanner.presentLimitedPicker()
                         } label: {
                             Label("Select more photos", systemImage: "photo.badge.plus")
+                        }
+                        Button {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Label("Allow all photos", systemImage: "photo.on.rectangle.angled")
                         }
                     } else {
                         Text("Full photo library access.")

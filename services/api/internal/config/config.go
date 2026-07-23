@@ -27,7 +27,7 @@ type Config struct {
 // Load reads config from the environment. DATABASE_URL and JWT_SECRET are required.
 func Load() (Config, error) {
 	c := Config{
-		Addr:        env("API_ADDR", ":8080"),
+		Addr:        env("API_ADDR", ":8082"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
 		JWTSecret:   os.Getenv("JWT_SECRET"),

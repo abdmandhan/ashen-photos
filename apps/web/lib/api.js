@@ -1,4 +1,4 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://nuc.test:8080";
+const BASE = process.env.NEXT_PUBLIC_API_URL || "https://8082.abdmandhan.com";
 
 function token() {
   if (typeof window === "undefined") return null;
@@ -21,9 +21,17 @@ async function req(path, { method = "GET", body, authed = true } = {}) {
 
 export const api = {
   login: (email, password) =>
-    req("/auth/login", { method: "POST", body: { email, password }, authed: false }),
+    req("/auth/login", {
+      method: "POST",
+      body: { email, password },
+      authed: false,
+    }),
   register: (email, password) =>
-    req("/auth/register", { method: "POST", body: { email, password }, authed: false }),
+    req("/auth/register", {
+      method: "POST",
+      body: { email, password },
+      authed: false,
+    }),
   stats: () => req("/stats"),
   facets: () => req("/search/facets"),
   assets: (params = {}) => {
@@ -35,12 +43,18 @@ export const api = {
   createAlbum: (name) => req("/albums", { method: "POST", body: { name } }),
   albumAssets: (id) => req(`/albums/${id}/assets`),
   addToAlbum: (albumId, assetId) =>
-    req(`/albums/${albumId}/assets`, { method: "POST", body: { asset_id: assetId } }),
+    req(`/albums/${albumId}/assets`, {
+      method: "POST",
+      body: { asset_id: assetId },
+    }),
   favorite: (assetId, favorite) =>
     req(`/assets/${assetId}/favorite`, { method: "PUT", body: { favorite } }),
   duplicates: () => req("/duplicates"),
   resolveDuplicate: (assetId, action) =>
-    req(`/assets/${assetId}/resolve-duplicate`, { method: "POST", body: { action } }),
+    req(`/assets/${assetId}/resolve-duplicate`, {
+      method: "POST",
+      body: { action },
+    }),
   replicationStatus: () => req("/replication/status"),
   redrive: () => req("/replication/redrive", { method: "POST" }),
 };

@@ -78,6 +78,24 @@ html, body {
 }
 .heart-on { color: #ff4d6d; }
 
+.chip-danger { background: transparent; border-color: #7f1d1d; color: #f87171; }
+.chip-danger:hover { background: #7f1d1d; color: #fff; }
+
+.dup-group {
+  display: flex; gap: 12px; padding: 12px; margin-bottom: 12px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.dup-item { width: 120px; }
+.dup-item img, .dup-item .placeholder {
+  width: 120px; height: 120px; object-fit: cover; border-radius: 8px;
+  background: var(--bg); display: flex; align-items: center; justify-content: center;
+}
+.dup-actions { display: flex; gap: 6px; margin: 6px 0 2px; }
+.dup-actions .chip { padding: 4px 10px; font-size: 12px; }
+
+.repl { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.repl-fail { color: #f87171; }
+
 .devices { display: flex; flex-direction: column; gap: 8px; }
 .device {
   background: var(--panel); border: 1px solid var(--border);

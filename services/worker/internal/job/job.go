@@ -23,3 +23,22 @@ type VerifyJob struct {
 	SHA256     string `json:"sha256"`
 	MediaType  string `json:"media_type"`
 }
+
+// ReplicateQueueKey is the list for replication jobs.
+const ReplicateQueueKey = "ashen:replicate:queue"
+
+// ReplicateJobQueueKey honors ASHEN_QUEUE_KEY (suffixed) to stay isolated with verify.
+func ReplicateJobQueueKey() string {
+	if k := os.Getenv("ASHEN_QUEUE_KEY"); k != "" {
+		return k + ":replicate"
+	}
+	return ReplicateQueueKey
+}
+
+// ReplicateJob mirrors the API's queue.ReplicateJob.
+type ReplicateJob struct {
+	AssetID    string `json:"asset_id"`
+	MediaType  string `json:"media_type"`
+	Bucket     string `json:"bucket"` // source bucket
+	StorageKey string `json:"storage_key"`
+}

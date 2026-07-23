@@ -38,6 +38,11 @@ export const api = {
     req(`/albums/${albumId}/assets`, { method: "POST", body: { asset_id: assetId } }),
   favorite: (assetId, favorite) =>
     req(`/assets/${assetId}/favorite`, { method: "PUT", body: { favorite } }),
+  duplicates: () => req("/duplicates"),
+  resolveDuplicate: (assetId, action) =>
+    req(`/assets/${assetId}/resolve-duplicate`, { method: "POST", body: { action } }),
+  replicationStatus: () => req("/replication/status"),
+  redrive: () => req("/replication/redrive", { method: "POST" }),
 };
 
 export function setToken(t) {

@@ -70,6 +70,9 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/duplicates", s.handleListDuplicates)
 		r.Post("/assets/{id}/resolve-duplicate", s.handleResolveDuplicate)
+
+		r.Get("/replication/status", s.handleReplicationStatus)
+		r.Post("/replication/redrive", s.handleReplicationRedrive)
 	})
 
 	return r

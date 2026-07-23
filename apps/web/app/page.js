@@ -77,6 +77,8 @@ function Dashboard({ onLogout }) {
   const [assets, setAssets] = useState([]);
   const [devices, setDevices] = useState([]);
   const [albums, setAlbums] = useState([]);
+  const [dups, setDups] = useState([]);
+  const [repl, setRepl] = useState(null);
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
 
@@ -86,19 +88,35 @@ function Dashboard({ onLogout }) {
     setAssets(a.assets || []);
   }
 
+  async function refreshMeta() {
+    const [s, fc, d, al, du, rp] = await Promise.all([
+      api.stats(), api.facets(), api.devices(), api.albums(),
+      api.duplicates(), api.replicationStatus(),
+    ]);
+    setStats(s); setFacets(fc); setDevices(d || []); setAlbums(al.albums || []);
+    setDups(du.groups || []); setRepl(rp);
+  }
+
   useEffect(() => {
     (async () => {
       try {
-        const [s, fc, d, al] = await Promise.all([
-          api.stats(), api.facets(), api.devices(), api.albums(),
-        ]);
-        setStats(s); setFacets(fc); setDevices(d || []); setAlbums(al.albums || []);
+        await refreshMeta();
         await loadAssets("all");
       } catch (e) {
         setError(e.message);
       }
     })();
   }, []);
+
+  async function resolveDup(assetId, action) {
+    try { await api.resolveDuplicate(assetId, action); await refreshMeta(); await loadAssets(filter); }
+    catch (e) { setError(e.message); }
+  }
+
+  async function runRedrive() {
+    try { const r = await api.redrive(); await refreshMeta(); alert(`Queued ${r.queued} for replication`); }
+    catch (e) { setError(e.message); }
+  }
 
   async function selectFilter(key) {
     setFilter(key);
@@ -152,6 +170,52 @@ function Dashboard({ onLogout }) {
               </div>
               <div className="album-name">{al.name}</div>
               <div className="meta">{al.asset_count} item{al.asset_count === 1 ? "" : "s"}</div>
+            </div>
+          ))}
+        </div>
+
+        {dups.length > 0 && (
+          <>
+            <div className="section-title">Possible duplicates ({dups.length} group{dups.length === 1 ? "" : "s"})</div>
+            {dups.map((g) => (
+              <div className="dup-group" key={g.group_id}>
+                {g.assets.map((a) => (
+                  <div className="dup-item" key={a.id}>
+                    {a.thumb_url ? <img src={a.thumb_url} alt="" /> : <div className="placeholder">{a.media_type}</div>}
+                    <div className="dup-actions">
+                      <button className="chip" onClick={() => resolveDup(a.id, "keep")}>Keep</button>
+                      <button className="chip chip-danger" onClick={() => resolveDup(a.id, "delete")}>Delete</button>
+                    </div>
+                    <div className="meta">{fmtBytes(a.byte_size)}</div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </>
+        )}
+
+        <div className="section-header">
+          <div className="section-title">Devices</div>
+          {repl && (
+            <div className="repl">
+              <span className="muted">Replication:</span> {repl.replicated} ok
+              {repl.failed > 0 && <span className="repl-fail"> · {repl.failed} failed</span>}
+              {repl.unreplicated > 0 && <span className="muted"> · {repl.unreplicated} pending</span>}
+              {(repl.failed > 0 || repl.unreplicated > 0) && (
+                <button className="link" onClick={runRedrive}>Redrive</button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="devices">
+          {devices.length === 0 && <div className="muted">No devices yet.</div>}
+          {devices.map((d) => (
+            <div className="device" key={d.id}>
+              <div>{d.name}</div>
+              <div className="meta">
+                {d.uploaded_count} item{d.uploaded_count === 1 ? "" : "s"}
+                {d.last_seen_at ? ` · seen ${new Date(d.last_seen_at).toLocaleDateString()}` : " · never seen"}
+              </div>
             </div>
           ))}
         </div>

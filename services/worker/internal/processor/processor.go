@@ -30,10 +30,89 @@ type Processor struct {
 	pool        *pgxpool.Pool
 	s3          *minio.Client
 	thumbBucket string
+
+	// Optional secondary replication target.
+	replica       *minio.Client
+	replicaTarget string
+	replicaPhotos string
+	replicaVideos string
 }
 
 func New(pool *pgxpool.Pool, s3 *minio.Client, thumbBucket string) *Processor {
 	return &Processor{pool: pool, s3: s3, thumbBucket: thumbBucket}
+}
+
+// WithReplica configures the secondary storage target for replication.
+func (p *Processor) WithReplica(replica *minio.Client, target, photos, videos string) *Processor {
+	p.replica = replica
+	p.replicaTarget = target
+	p.replicaPhotos = photos
+	p.replicaVideos = videos
+	return p
+}
+
+func (p *Processor) ReplicationEnabled() bool { return p.replica != nil }
+
+func (p *Processor) replicaBucketFor(mediaType string) string {
+	if mediaType == "video" {
+		return p.replicaVideos
+	}
+	return p.replicaPhotos
+}
+
+// Replicate streams an object from the primary target to the secondary and
+// records the result. Idempotent: an already-replicated object is a no-op.
+func (p *Processor) Replicate(ctx context.Context, j job.ReplicateJob) error {
+	if p.replica == nil {
+		return nil
+	}
+	target := p.replicaTarget
+	dstBucket := p.replicaBucketFor(j.MediaType)
+
+	src, err := p.s3.GetObject(ctx, j.Bucket, j.StorageKey, minio.GetObjectOptions{})
+	if err != nil {
+		return p.recordReplica(ctx, j.AssetID, target, "failed", err.Error())
+	}
+	defer src.Close()
+	stat, err := src.Stat()
+	if err != nil {
+		return p.recordReplica(ctx, j.AssetID, target, "failed", err.Error())
+	}
+
+	info, err := p.replica.PutObject(ctx, dstBucket, j.StorageKey, src, stat.Size,
+		minio.PutObjectOptions{ContentType: stat.ContentType})
+	if err != nil {
+		return p.recordReplica(ctx, j.AssetID, target, "failed", err.Error())
+	}
+	// Verify via the size PutObject reports (avoids a separate HEAD that some
+	// reverse proxies reject).
+	if info.Size != stat.Size {
+		return p.recordReplica(ctx, j.AssetID, target, "failed", "size mismatch")
+	}
+	log.Printf("replicated asset=%s -> %s/%s", j.AssetID, dstBucket, j.StorageKey)
+	return p.recordReplica(ctx, j.AssetID, target, "replicated", "")
+}
+
+func (p *Processor) recordReplica(ctx context.Context, assetID, target, status, errMsg string) error {
+	var replicatedAt *time.Time
+	if status == "replicated" {
+		now := time.Now()
+		replicatedAt = &now
+	}
+	var e *string
+	if errMsg != "" {
+		e = &errMsg
+	}
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO asset_replicas(asset_id, target, status, error, replicated_at)
+		 VALUES($1,$2,$3,$4,$5)
+		 ON CONFLICT (asset_id, target)
+		 DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, replicated_at=EXCLUDED.replicated_at`,
+		assetID, target, status, e, replicatedAt)
+	if status == "failed" && err == nil {
+		return nil // recorded the failure; don't propagate (avoids infinite requeue)
+	}
+	return err
 }
 
 // Process verifies one uploaded object end to end.

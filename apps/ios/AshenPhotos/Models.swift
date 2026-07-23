@@ -169,6 +169,8 @@ struct BackupItem: Codable, Identifiable {
     var errorMessage: String? = nil
     // Upload progress 0...1 (aggregate across parts), for the UI. Not persisted.
     var progress: Double = 0
+    // What this item is currently doing (Exporting/Checking/Uploading), for the UI.
+    var phase: String? = nil
 
     // --- Free Up Space (Phase 2a) ---
     var byteSize: Int64 = 0         // total on-device original size (sum of parts)

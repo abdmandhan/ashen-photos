@@ -150,12 +150,14 @@ final class BackupCoordinator: NSObject, ObservableObject {
         let id = asset.localIdentifier
         do {
             statusLine = "Processing \(done + 1)/\(total)…"
+            items[id]?.phase = "Exporting"
             let parts = try await PhotoScanner.export(asset)
 
             var outstanding: [String] = []
             var totalBytes: Int64 = 0
             var shas: [String] = []
             var allExisted = true
+            items[id]?.phase = "Checking"
             for part in parts {
                 totalBytes += part.byteSize
                 shas.append(part.sha256)
@@ -171,6 +173,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
                     capturedAt: part.capturedAt, deviceID: auth.deviceID,
                     ext: part.ext, livePhotoGroupID: part.livePhotoGroupID
                 )
+                items[id]?.phase = "Uploading"
                 let up = try await api.createUpload(req)
 
                 // Upload the client-rendered thumbnail (HEIC/video) if present.
@@ -190,10 +193,12 @@ final class BackupCoordinator: NSObject, ObservableObject {
             updated.errorMessage = nil
             updated.byteSize = totalBytes
             updated.shas = shas
+            updated.phase = outstanding.isEmpty ? nil : "Uploading"
             // Every part already existed on the server → verified now (dedup = complete).
             if allExisted { updated.verified = true; lastBackupAt = Date() }
             items[id] = updated
         } catch {
+            items[id]?.phase = nil
             if isCancellation(error) {
                 // Interrupted (tab switch, backgrounding) — leave pending to resume,
                 // don't treat as a real failure.
@@ -204,6 +209,11 @@ final class BackupCoordinator: NSObject, ObservableObject {
             }
         }
         save()
+    }
+
+    /// Items actively being worked on (exporting / checking / uploading), for the UI.
+    var activeItems: [BackupItem] {
+        items.values.filter { $0.phase != nil }.sorted { $0.id < $1.id }
     }
 
     private func isCancellation(_ error: Error) -> Bool {
@@ -247,6 +257,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
             item.state = .done
             item.errorMessage = nil
             item.progress = 1
+            item.phase = nil
             items[local] = item
             lastBackupAt = Date()
         } else {
@@ -376,6 +387,7 @@ final class BackupCoordinator: NSObject, ObservableObject {
               let arr = try? JSONDecoder().decode([BackupItem].self, from: data) else { return }
         for var it in arr {
             if it.state == .uploading { it.state = .pending; it.outstanding = [] } // resume interrupted
+            it.phase = nil; it.progress = 0 // transient, don't carry across launches
             items[it.id] = it
         }
     }

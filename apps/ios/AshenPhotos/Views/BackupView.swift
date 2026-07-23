@@ -58,7 +58,7 @@ struct BackupView: View {
                         }
                     }
 
-                    if !coordinator.inProgressItems.isEmpty {
+                    if !coordinator.activeItems.isEmpty {
                         processingSection
                     }
 
@@ -75,22 +75,28 @@ struct BackupView: View {
 
     private var processingSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Processing (\(coordinator.inProgressItems.count))")
+            Text("Processing (\(coordinator.activeItems.count))")
                 .font(.headline)
-            ForEach(coordinator.inProgressItems) { item in
+            ForEach(coordinator.activeItems) { item in
                 HStack(spacing: 10) {
                     LocalThumbnail(localIdentifier: item.id, side: 44)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Label(mediaLabel(item.mediaType),
-                                  systemImage: icon(item.mediaType))
+                            Label(mediaLabel(item.mediaType), systemImage: icon(item.mediaType))
                                 .font(.subheadline)
                             Spacer()
-                            Text("\(Int(item.progress * 100))%")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                            Text(item.phase ?? "")
+                                .font(.caption).foregroundStyle(.secondary)
+                            if item.phase == "Uploading" {
+                                Text("\(Int(item.progress * 100))%")
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }
                         }
-                        ProgressView(value: item.progress)
+                        if item.phase == "Uploading" {
+                            ProgressView(value: item.progress)
+                        } else {
+                            ProgressView().progressViewStyle(.linear) // indeterminate: exporting/checking
+                        }
                     }
                 }
             }

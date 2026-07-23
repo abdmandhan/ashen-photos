@@ -19,6 +19,19 @@ struct ExportedAsset {
 enum ScanError: Error {
     case noResource
     case exportFailed
+    case timedOut
+}
+
+/// Ensures a continuation resumes exactly once, from either the callback or a timeout.
+private final class ResumeGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
+    }
 }
 
 /// Reads the photo library and exports originals to temp files, hashing as it streams.
@@ -107,6 +120,10 @@ enum PhotoScanner {
         return parts
     }
 
+    // iCloud-backed assets can stall indefinitely; time out so the batch keeps moving.
+    private static let dataTimeout: TimeInterval = 120
+    private static let thumbTimeout: TimeInterval = 30
+
     /// Hashes an asset's primary resource (no temp file) — for backfill matching.
     static func hashPrimary(_ asset: PHAsset) async -> String? {
         let resources = PHAssetResource.assetResources(for: asset)
@@ -115,11 +132,15 @@ enum PhotoScanner {
         let opts = PHAssetResourceRequestOptions()
         opts.isNetworkAccessAllowed = true
         let ok: Bool = await withCheckedContinuation { cont in
-            var done = false
-            PHAssetResourceManager.default().requestData(for: resource, options: opts) { chunk in
+            let guardOnce = ResumeGuard()
+            let reqID = PHAssetResourceManager.default().requestData(for: resource, options: opts) { chunk in
                 hasher.update(data: chunk)
             } completionHandler: { err in
-                if !done { done = true; cont.resume(returning: err == nil) }
+                if guardOnce.claim() { cont.resume(returning: err == nil) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + dataTimeout) {
+                PHAssetResourceManager.default().cancelDataRequest(reqID)
+                if guardOnce.claim() { cont.resume(returning: false) }
             }
         }
         guard ok else { return nil }
@@ -133,16 +154,19 @@ enum PhotoScanner {
             opts.isNetworkAccessAllowed = true
             opts.deliveryMode = .highQualityFormat
             opts.resizeMode = .fast
-            var resumed = false
-            PHImageManager.default().requestImage(
+            let guardOnce = ResumeGuard()
+            let reqID = PHImageManager.default().requestImage(
                 for: asset, targetSize: CGSize(width: 1024, height: 1024),
                 contentMode: .aspectFit, options: opts
             ) { img, info in
-                // highQualityFormat delivers once, but guard against extra callbacks.
+                // Ignore the degraded preview; wait for (or time out on) the full image.
                 let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                if degraded || resumed { return }
-                resumed = true
-                cont.resume(returning: img?.jpegData(compressionQuality: 0.7))
+                if degraded { return }
+                if guardOnce.claim() { cont.resume(returning: img?.jpegData(compressionQuality: 0.7)) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + thumbTimeout) {
+                PHImageManager.default().cancelImageRequest(reqID)
+                if guardOnce.claim() { cont.resume(returning: nil) }
             }
         }
     }
@@ -162,14 +186,22 @@ enum PhotoScanner {
         opts.isNetworkAccessAllowed = true
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            PHAssetResourceManager.default().requestData(for: resource, options: opts) { chunk in
+            let guardOnce = ResumeGuard()
+            let reqID = PHAssetResourceManager.default().requestData(for: resource, options: opts) { chunk in
                 hasher.update(data: chunk)
                 total += Int64(chunk.count)
                 try? handle.write(contentsOf: chunk)
             } completionHandler: { error in
+                guard guardOnce.claim() else { return }
                 try? handle.close()
-                if let error { cont.resume(throwing: error) }
-                else { cont.resume() }
+                if let error { cont.resume(throwing: error) } else { cont.resume() }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + dataTimeout) {
+                PHAssetResourceManager.default().cancelDataRequest(reqID)
+                if guardOnce.claim() {
+                    try? handle.close()
+                    cont.resume(throwing: ScanError.timedOut)
+                }
             }
         }
 

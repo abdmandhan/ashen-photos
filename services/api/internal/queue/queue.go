@@ -3,12 +3,22 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"os"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// VerifyQueueKey is the Redis list the worker pops verify jobs from.
+// VerifyQueueKey is the default Redis list the worker pops verify jobs from.
+// Override with ASHEN_QUEUE_KEY to run an isolated pipeline (e.g. for testing
+// alongside a production worker on the same Redis).
 const VerifyQueueKey = "ashen:verify:queue"
+
+func queueKey() string {
+	if k := os.Getenv("ASHEN_QUEUE_KEY"); k != "" {
+		return k
+	}
+	return VerifyQueueKey
+}
 
 // VerifyJob asks the worker to download an uploaded object, recompute its
 // SHA-256, and (on match) generate a thumbnail + extract EXIF.
@@ -24,6 +34,7 @@ type VerifyJob struct {
 
 type Queue struct {
 	rdb *redis.Client
+	key string
 }
 
 func New(redisURL string) (*Queue, error) {
@@ -31,7 +42,7 @@ func New(redisURL string) (*Queue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Queue{rdb: redis.NewClient(opt)}, nil
+	return &Queue{rdb: redis.NewClient(opt), key: queueKey()}, nil
 }
 
 func (q *Queue) Ping(ctx context.Context) error {
@@ -43,5 +54,5 @@ func (q *Queue) EnqueueVerify(ctx context.Context, job VerifyJob) error {
 	if err != nil {
 		return err
 	}
-	return q.rdb.LPush(ctx, VerifyQueueKey, b).Err()
+	return q.rdb.LPush(ctx, q.key, b).Err()
 }

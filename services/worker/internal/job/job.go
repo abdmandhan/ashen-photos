@@ -1,7 +1,17 @@
 package job
 
+import "os"
+
 // VerifyQueueKey must match the API's queue.VerifyQueueKey.
 const VerifyQueueKey = "ashen:verify:queue"
+
+// QueueKey returns the queue to consume, honoring ASHEN_QUEUE_KEY (matches the API).
+func QueueKey() string {
+	if k := os.Getenv("ASHEN_QUEUE_KEY"); k != "" {
+		return k
+	}
+	return VerifyQueueKey
+}
 
 // VerifyJob mirrors the API's queue.VerifyJob (same JSON shape).
 type VerifyJob struct {

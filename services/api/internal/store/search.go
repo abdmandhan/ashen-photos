@@ -38,6 +38,7 @@ func (s *Store) ListAssetsFiltered(ctx context.Context, userID string, f AssetFi
 	args = append(args, userID) // $1
 	conds = append(conds, "a.user_id = $1")
 	conds = append(conds, "a.status = 'complete'")
+	conds = append(conds, "a.deleted_at IS NULL")
 
 	if f.AlbumID != "" {
 		args = append(args, f.AlbumID)
@@ -109,7 +110,7 @@ func (s *Store) FacetCounts(ctx context.Context, userID string) (Facets, error) 
 		  COUNT(*) FILTER (WHERE media_type='video'),
 		  COUNT(*) FILTER (WHERE favorite),
 		  COUNT(*)
-		FROM assets WHERE user_id=$1 AND status='complete'`, userID,
+		FROM assets WHERE user_id=$1 AND status='complete' AND deleted_at IS NULL`, userID,
 	).Scan(&f.PhotoCount, &f.VideoCount, &f.FavoriteCount, &f.Total)
 	if err != nil {
 		return f, err
@@ -119,7 +120,7 @@ func (s *Store) FacetCounts(ctx context.Context, userID string) (Facets, error) 
 		SELECT d.id, d.name, COUNT(DISTINCT a.id)
 		FROM devices d
 		JOIN uploads u ON u.device_id = d.id
-		JOIN assets a ON a.id = u.asset_id AND a.status='complete'
+		JOIN assets a ON a.id = u.asset_id AND a.status='complete' AND a.deleted_at IS NULL
 		WHERE d.user_id=$1
 		GROUP BY d.id, d.name
 		ORDER BY 3 DESC`, userID)

@@ -53,7 +53,8 @@ func main() {
 	defer rdb.Close()
 
 	proc := processor.New(pool, s3, cfg.BucketThumbnail)
-	log.Printf("worker started, consuming %s", job.VerifyQueueKey)
+	qkey := job.QueueKey()
+	log.Printf("worker started, consuming %s", qkey)
 
 	for {
 		if ctx.Err() != nil {
@@ -61,7 +62,7 @@ func main() {
 			return
 		}
 		// BRPOP blocks up to 5s so we can re-check ctx and exit cleanly.
-		res, err := rdb.BRPop(ctx, 5*time.Second, job.VerifyQueueKey).Result()
+		res, err := rdb.BRPop(ctx, 5*time.Second, qkey).Result()
 		if err != nil {
 			if errors.Is(err, redis.Nil) || errors.Is(err, context.Canceled) {
 				continue
@@ -81,7 +82,7 @@ func main() {
 			log.Printf("process asset=%s failed: %v", j.AssetID, err)
 			// requeue for retry
 			if b, mErr := json.Marshal(j); mErr == nil {
-				_ = rdb.LPush(context.Background(), job.VerifyQueueKey, b).Err()
+				_ = rdb.LPush(context.Background(), qkey, b).Err()
 			}
 		} else {
 			log.Printf("processed asset=%s ok", j.AssetID)

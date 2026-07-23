@@ -67,6 +67,9 @@ func (s *Server) Router() http.Handler {
 		r.Delete("/albums/{id}/assets/{assetId}", s.handleRemoveAlbumAsset)
 
 		r.Put("/assets/{id}/favorite", s.handleSetFavorite)
+
+		r.Get("/duplicates", s.handleListDuplicates)
+		r.Post("/assets/{id}/resolve-duplicate", s.handleResolveDuplicate)
 	})
 
 	return r

@@ -77,7 +77,7 @@ func (s *Store) Stats(ctx context.Context, userID string) (Stats, error) {
 		   COUNT(*) FILTER (WHERE media_type='photo' AND status='complete'),
 		   COUNT(*) FILTER (WHERE media_type='video' AND status='complete'),
 		   COALESCE(SUM(byte_size) FILTER (WHERE status='complete'), 0)
-		 FROM assets WHERE user_id=$1`, userID,
+		 FROM assets WHERE user_id=$1 AND deleted_at IS NULL`, userID,
 	).Scan(&st.PhotoCount, &st.VideoCount, &st.TotalBytes)
 	return st, err
 }

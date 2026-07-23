@@ -13,6 +13,7 @@ import (
 	_ "image/png"
 	"io"
 	"log"
+	"math/bits"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -67,11 +68,15 @@ func (p *Processor) Process(ctx context.Context, j job.VerifyJob) error {
 		exifJSON      []byte
 	)
 
+	var phash *int64
+
 	if j.MediaType == "photo" {
 		raw := buf.Bytes()
 		if img, _, derr := image.Decode(bytes.NewReader(raw)); derr == nil {
 			width = img.Bounds().Dx()
 			height = img.Bounds().Dy()
+			h := int64(dHash(img)) // perceptual hash for near-dup detection
+			phash = &h
 			if key, terr := p.makeThumb(ctx, j, img); terr == nil {
 				thumbKey = key
 			} else {
@@ -84,7 +89,16 @@ func (p *Processor) Process(ctx context.Context, j job.VerifyJob) error {
 		capturedAt, exifJSON = extractExif(raw)
 	}
 
-	return p.markComplete(ctx, j, width, height, thumbKey, capturedAt, exifJSON)
+	if err := p.markComplete(ctx, j, width, height, thumbKey, capturedAt, exifJSON, phash); err != nil {
+		return err
+	}
+	// Group with visually-similar assets (best-effort; failure doesn't fail the job).
+	if phash != nil {
+		if err := p.groupDuplicates(ctx, j.UserID, j.AssetID, *phash, width, height); err != nil {
+			log.Printf("dedup asset=%s: %v", j.AssetID, err)
+		}
+	}
+	return nil
 }
 
 func (p *Processor) makeThumb(ctx context.Context, j job.VerifyJob, img image.Image) (string, error) {
@@ -124,7 +138,7 @@ func extractExif(raw []byte) (*time.Time, []byte) {
 	return captured, b
 }
 
-func (p *Processor) markComplete(ctx context.Context, j job.VerifyJob, w, h int, thumbKey string, capturedAt *time.Time, exifJSON []byte) error {
+func (p *Processor) markComplete(ctx context.Context, j job.VerifyJob, w, h int, thumbKey string, capturedAt *time.Time, exifJSON []byte, phash *int64) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -135,9 +149,10 @@ func (p *Processor) markComplete(ctx context.Context, j job.VerifyJob, w, h int,
 		   width = NULLIF($2,0), height = NULLIF($3,0),
 		   thumb_key = NULLIF($4,''),
 		   captured_at = COALESCE(captured_at, $5),
-		   exif = COALESCE($6, exif)
+		   exif = COALESCE($6, exif),
+		   phash = $7
 		 WHERE id=$1`,
-		j.AssetID, w, h, thumbKey, capturedAt, exifJSON); err != nil {
+		j.AssetID, w, h, thumbKey, capturedAt, exifJSON, phash); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx,
@@ -145,6 +160,87 @@ func (p *Processor) markComplete(ctx context.Context, j job.VerifyJob, w, h int,
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+const hammingThreshold = 10 // max differing bits to count as a near-duplicate
+
+// dHash computes a 64-bit difference hash: grayscale → 9x8 → compare adjacent
+// columns. Robust to re-encoding/resizing/minor edits.
+func dHash(img image.Image) uint64 {
+	small := imaging.Resize(imaging.Grayscale(img), 9, 8, imaging.Lanczos)
+	var hash uint64
+	bit := 0
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			l, _, _, _ := small.At(x, y).RGBA()
+			r, _, _, _ := small.At(x+1, y).RGBA()
+			if l > r {
+				hash |= 1 << uint(bit)
+			}
+			bit++
+		}
+	}
+	return hash
+}
+
+// groupDuplicates finds visually-similar assets (same dimensions, Hamming
+// distance within threshold) and assigns them a shared dup_group_id.
+func (p *Processor) groupDuplicates(ctx context.Context, userID, assetID string, phash int64, w, h int) error {
+	if w == 0 || h == 0 {
+		return nil
+	}
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, phash, dup_group_id FROM assets
+		 WHERE user_id=$1 AND id<>$2 AND status='complete' AND deleted_at IS NULL
+		   AND phash IS NOT NULL AND width=$3 AND height=$4`,
+		userID, assetID, w, h)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var matchIDs []string
+	var existingGroup *string
+	for rows.Next() {
+		var id string
+		var candHash int64
+		var group *string
+		if err := rows.Scan(&id, &candHash, &group); err != nil {
+			return err
+		}
+		if hamming(uint64(phash), uint64(candHash)) <= hammingThreshold {
+			matchIDs = append(matchIDs, id)
+			if group != nil && existingGroup == nil {
+				existingGroup = group
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(matchIDs) == 0 {
+		return nil
+	}
+
+	// Join an existing group if a match already has one, else mint a new group.
+	var groupID string
+	if existingGroup != nil {
+		groupID = *existingGroup
+	} else {
+		if err := p.pool.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&groupID); err != nil {
+			return err
+		}
+	}
+
+	ids := append(matchIDs, assetID)
+	_, err = p.pool.Exec(ctx,
+		`UPDATE assets SET dup_group_id=$1 WHERE id = ANY($2) AND dup_group_id IS NULL`,
+		groupID, ids)
+	return err
+}
+
+func hamming(a, b uint64) int {
+	return bits.OnesCount64(a ^ b)
 }
 
 func (p *Processor) markFailed(ctx context.Context, j job.VerifyJob) error {

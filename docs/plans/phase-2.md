@@ -8,8 +8,11 @@
 - ✅ **P2-1 Albums+Favorites** — migration `0003`, full CRUD + membership + favorite toggle. Curl-verified E2E.
 - ✅ **P2-2 Search** — filterable `GET /assets` (from/to/media_type/device_id/favorite/album_id) + `GET /search/facets`. Verified.
 - ✅ **P2-3 Multi-device** — `asset_devices` join (migration `0004`), `last_seen_at` via `X-Device-Id` header, per-device `uploaded_count` in `GET /devices`, `PATCH /devices/:id` rename, dedup reconciliation (device B seeing an existing asset is recorded without re-upload). Verified E2E.
+- ✅ **P2-4 Duplicates** — worker computes dHash (64-bit), groups same-dimension assets within Hamming ≤10 into a `dup_group_id` (migration `0005`: `phash`, `dup_group_id`, `deleted_at`). `GET /duplicates`, `POST /assets/:id/resolve-duplicate` (delete=soft-delete / keep=dismiss). Soft-deleted assets excluded from timeline/stats/facets/dedup. Verified E2E on an isolated queue.
 - 🚧 **P2-6 Web** — albums row, favorite hearts, filter chips (All/Photos/Videos/Favorites) live + browser-verified. iOS UI + duplicates/replication views pending.
-- ⬜ P2-4 duplicates, P2-5 replication — not started.
+- ⬜ P2-5 replication — not started.
+
+**Infra note:** added `ASHEN_QUEUE_KEY` env override (API + worker) so a test pipeline can run on a private Redis list without the production worker stealing jobs.
 
 ---
 
@@ -160,7 +163,7 @@ New status values stay within existing `assets.status`; soft-delete via `deleted
 | P2-1 | Albums+Favorites | CRUD albums, add/remove assets, favorite toggle; curl-verified.    | ✅ done |
 | P2-2 | Search           | Filterable `GET /assets` + facets; keyset pagination holds.        | ✅ done |
 | P2-3 | Multi-device     | `last_seen_at`, per-device counts, `asset_devices` reconciliation. | ✅ done |
-| P2-4 | Duplicates       | `phash` + near-dup grouping + review/resolve endpoints.            | ⬜ todo |
+| P2-4 | Duplicates       | `phash` + near-dup grouping + review/resolve endpoints.            | ✅ done |
 | P2-5 | Replication      | second target, `replicate` job, status + redrive.                 | ⬜ todo |
 | P2-6 | UI               | Web: albums, favorites, filters ✅. iOS + dup/repl views pending.   | 🚧 partial |
 

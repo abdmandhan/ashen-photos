@@ -35,7 +35,7 @@ type Upload struct {
 // otherwise a half-finished upload can never recover.
 func (s *Store) ExistingHashes(ctx context.Context, userID string, hashes []string) (map[string]string, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT sha256, id FROM assets WHERE user_id=$1 AND sha256 = ANY($2) AND status='complete'`,
+		`SELECT sha256, id FROM assets WHERE user_id=$1 AND sha256 = ANY($2) AND status='complete' AND deleted_at IS NULL`,
 		userID, hashes)
 	if err != nil {
 		return nil, err

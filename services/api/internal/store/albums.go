@@ -144,7 +144,7 @@ func (s *Store) ListAlbumAssets(ctx context.Context, userID, albumID string, lim
 	}
 	q := `SELECT a.id, a.media_type, a.byte_size, a.width, a.height, a.captured_at, a.status, a.favorite, a.storage_key, a.thumb_key
 	      FROM album_assets aa JOIN assets a ON a.id = aa.asset_id
-	      WHERE aa.album_id = $1 AND a.status = 'complete'`
+	      WHERE aa.album_id = $1 AND a.status = 'complete' AND a.deleted_at IS NULL`
 	args := []any{albumID}
 	if before != nil {
 		q += ` AND a.captured_at < $2`

@@ -2,7 +2,13 @@
 
 > Goal: turn the reliable backup from Phase 1 into a real photo library — organize (albums, favorites), find (metadata search), trust (duplicate detection, multi-device), and protect (off-site replication).
 
-> **Status: 📝 PLANNED** — builds directly on the Phase 1 backend (Go API + worker), iOS app, and web dashboard. No rewrite; additive schema + endpoints + UI.
+> **Status: 🚧 IN PROGRESS** — P2-1 (albums+favorites) and P2-2 (search) done + verified. Web UI (P2-6) has albums, favorites, and filters live. Remaining: P2-3 multi-device, P2-4 duplicates, P2-5 replication, iOS UI.
+
+**Progress:**
+- ✅ **P2-1 Albums+Favorites** — migration `0003`, full CRUD + membership + favorite toggle. Curl-verified E2E.
+- ✅ **P2-2 Search** — filterable `GET /assets` (from/to/media_type/device_id/favorite/album_id) + `GET /search/facets`. Verified.
+- 🚧 **P2-6 Web** — albums row, favorite hearts, filter chips (All/Photos/Videos/Favorites) live + browser-verified. iOS UI + duplicates/replication views pending.
+- ⬜ P2-3 multi-device, P2-4 duplicates, P2-5 replication — not started.
 
 ---
 
@@ -150,12 +156,12 @@ New status values stay within existing `assets.status`; soft-delete via `deleted
 
 | #   | Milestone        | Deliverable                                                        |
 | --- | ---------------- | ------------------------------------------------------------------ |
-| P2-1 | Albums+Favorites | CRUD albums, add/remove assets, favorite toggle; curl-verified.    |
-| P2-2 | Search           | Filterable `GET /assets` + facets; keyset pagination holds.        |
-| P2-3 | Multi-device     | `last_seen_at`, per-device counts, `asset_devices` reconciliation. |
-| P2-4 | Duplicates       | `phash` + near-dup grouping + review/resolve endpoints.            |
-| P2-5 | Replication      | second target, `replicate` job, status + redrive.                 |
-| P2-6 | UI               | Web + iOS: albums, favorites, filters, duplicates, devices, repl.  |
+| P2-1 | Albums+Favorites | CRUD albums, add/remove assets, favorite toggle; curl-verified.    | ✅ done |
+| P2-2 | Search           | Filterable `GET /assets` + facets; keyset pagination holds.        | ✅ done |
+| P2-3 | Multi-device     | `last_seen_at`, per-device counts, `asset_devices` reconciliation. | ⬜ todo |
+| P2-4 | Duplicates       | `phash` + near-dup grouping + review/resolve endpoints.            | ⬜ todo |
+| P2-5 | Replication      | second target, `replicate` job, status + redrive.                 | ⬜ todo |
+| P2-6 | UI               | Web: albums, favorites, filters ✅. iOS + dup/repl views pending.   | 🚧 partial |
 
 P2-1 and P2-2 are independent and can go first (pure API). P2-3/P2-4/P2-5 each touch the worker or middleware. P2-6 lands after its backing endpoints are stable.
 

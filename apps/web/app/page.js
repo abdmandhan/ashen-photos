@@ -64,24 +64,63 @@ function fmtBytes(n) {
   return `${(n / Math.pow(1024, i)).toFixed(1)} ${u[i]}`;
 }
 
+const FILTERS = [
+  { key: "all", label: "All", params: {} },
+  { key: "photo", label: "Photos", params: { media_type: "photo" } },
+  { key: "video", label: "Videos", params: { media_type: "video" } },
+  { key: "favorite", label: "Favorites", params: { favorite: "true" } },
+];
+
 function Dashboard({ onLogout }) {
   const [stats, setStats] = useState(null);
+  const [facets, setFacets] = useState(null);
   const [assets, setAssets] = useState([]);
   const [devices, setDevices] = useState([]);
+  const [albums, setAlbums] = useState([]);
+  const [filter, setFilter] = useState("all");
   const [error, setError] = useState(null);
+
+  async function loadAssets(key) {
+    const f = FILTERS.find((x) => x.key === key) || FILTERS[0];
+    const a = await api.assets(f.params);
+    setAssets(a.assets || []);
+  }
 
   useEffect(() => {
     (async () => {
       try {
-        const [s, a, d] = await Promise.all([api.stats(), api.assets(), api.devices()]);
-        setStats(s);
-        setAssets(a.assets || []);
-        setDevices(d || []);
+        const [s, fc, d, al] = await Promise.all([
+          api.stats(), api.facets(), api.devices(), api.albums(),
+        ]);
+        setStats(s); setFacets(fc); setDevices(d || []); setAlbums(al.albums || []);
+        await loadAssets("all");
       } catch (e) {
         setError(e.message);
       }
     })();
   }, []);
+
+  async function selectFilter(key) {
+    setFilter(key);
+    try { await loadAssets(key); } catch (e) { setError(e.message); }
+  }
+
+  async function toggleFavorite(asset, e) {
+    e.preventDefault();
+    try {
+      await api.favorite(asset.id, !asset.favorite);
+      setAssets((prev) => prev.map((x) => (x.id === asset.id ? { ...x, favorite: !x.favorite } : x))
+        .filter((x) => filter !== "favorite" || x.favorite));
+      const fc = await api.facets(); setFacets(fc);
+    } catch (e2) { setError(e2.message); }
+  }
+
+  async function newAlbum() {
+    const name = prompt("Album name");
+    if (!name) return;
+    try { await api.createAlbum(name); const al = await api.albums(); setAlbums(al.albums || []); }
+    catch (e) { setError(e.message); }
+  }
 
   return (
     <>
@@ -95,23 +134,41 @@ function Dashboard({ onLogout }) {
         <div className="stats">
           <div className="stat"><div className="value">{stats?.photo_count ?? "—"}</div><div className="label">Photos</div></div>
           <div className="stat"><div className="value">{stats?.video_count ?? "—"}</div><div className="label">Videos</div></div>
+          <div className="stat"><div className="value">{facets?.favorite_count ?? "—"}</div><div className="label">Favorites</div></div>
           <div className="stat"><div className="value">{stats ? fmtBytes(stats.total_bytes) : "—"}</div><div className="label">Storage used</div></div>
           <div className="stat"><div className="value">{devices.length}</div><div className="label">Devices</div></div>
         </div>
 
-        <div className="section-title">Devices</div>
-        <div className="devices">
-          {devices.length === 0 && <div className="muted">No devices yet.</div>}
-          {devices.map((d) => (
-            <div className="device" key={d.id}>
-              <div>{d.name}</div>
-              <div className="meta">{d.platform} · added {new Date(d.created_at).toLocaleDateString()}</div>
+        <div className="section-header">
+          <div className="section-title">Albums</div>
+          <button className="link" onClick={newAlbum}>+ New album</button>
+        </div>
+        <div className="albums">
+          {albums.length === 0 && <div className="muted">No albums yet.</div>}
+          {albums.map((al) => (
+            <div className="album" key={al.id}>
+              <div className="album-cover">
+                {al.cover_url ? <img src={al.cover_url} alt="" /> : <div className="placeholder">empty</div>}
+              </div>
+              <div className="album-name">{al.name}</div>
+              <div className="meta">{al.asset_count} item{al.asset_count === 1 ? "" : "s"}</div>
             </div>
           ))}
         </div>
 
         <div className="section-title">Timeline</div>
-        {assets.length === 0 && <div className="muted">No backed-up media yet.</div>}
+        <div className="filters">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              className={`chip ${filter === f.key ? "chip-active" : ""}`}
+              onClick={() => selectFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {assets.length === 0 && <div className="muted">Nothing here.</div>}
         <div className="grid">
           {assets.map((a) => (
             <a className="tile" key={a.id} href={a.download_url} target="_blank" rel="noreferrer" title="Download original">
@@ -121,6 +178,13 @@ function Dashboard({ onLogout }) {
                 <div className="placeholder">{a.media_type}</div>
               )}
               {a.media_type === "video" && <span className="badge">▶</span>}
+              <button
+                className={`heart ${a.favorite ? "heart-on" : ""}`}
+                onClick={(e) => toggleFavorite(a, e)}
+                title={a.favorite ? "Unfavorite" : "Favorite"}
+              >
+                {a.favorite ? "♥" : "♡"}
+              </button>
             </a>
           ))}
         </div>

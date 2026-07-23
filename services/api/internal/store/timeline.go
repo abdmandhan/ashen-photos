@@ -16,6 +16,7 @@ type TimelineAsset struct {
 	Height     *int       `json:"height"`
 	CapturedAt *time.Time `json:"captured_at"`
 	Status     string     `json:"status"`
+	Favorite   bool       `json:"favorite"`
 	StorageKey string     `json:"-"`
 	ThumbKey   *string    `json:"-"`
 }
@@ -25,7 +26,7 @@ func (s *Store) ListAssets(ctx context.Context, userID string, limit int, before
 	if limit <= 0 || limit > 200 {
 		limit = 60
 	}
-	q := `SELECT id, media_type, byte_size, width, height, captured_at, status, storage_key, thumb_key
+	q := `SELECT id, media_type, byte_size, width, height, captured_at, status, favorite, storage_key, thumb_key
 	      FROM assets
 	      WHERE user_id=$1 AND status='complete'`
 	args := []any{userID}
@@ -44,7 +45,7 @@ func (s *Store) ListAssets(ctx context.Context, userID string, limit int, before
 	for rows.Next() {
 		var a TimelineAsset
 		if err := rows.Scan(&a.ID, &a.MediaType, &a.ByteSize, &a.Width, &a.Height,
-			&a.CapturedAt, &a.Status, &a.StorageKey, &a.ThumbKey); err != nil {
+			&a.CapturedAt, &a.Status, &a.Favorite, &a.StorageKey, &a.ThumbKey); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

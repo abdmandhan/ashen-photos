@@ -54,7 +54,18 @@ func (s *Server) Router() http.Handler {
 		r.Post("/uploads/{id}/complete", s.handleCompleteUpload)
 
 		r.Get("/assets", s.handleListAssets)
+		r.Get("/search/facets", s.handleFacets)
 		r.Get("/stats", s.handleStats)
+
+		r.Post("/albums", s.handleCreateAlbum)
+		r.Get("/albums", s.handleListAlbums)
+		r.Patch("/albums/{id}", s.handleUpdateAlbum)
+		r.Delete("/albums/{id}", s.handleDeleteAlbum)
+		r.Get("/albums/{id}/assets", s.handleListAlbumAssets)
+		r.Post("/albums/{id}/assets", s.handleAddAlbumAsset)
+		r.Delete("/albums/{id}/assets/{assetId}", s.handleRemoveAlbumAsset)
+
+		r.Put("/assets/{id}/favorite", s.handleSetFavorite)
 	})
 
 	return r

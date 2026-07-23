@@ -52,6 +52,32 @@ html, body {
 }
 .tile .placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 12px; }
 
+.section-header { display: flex; align-items: center; justify-content: space-between; }
+
+.filters { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+.chip {
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.chip-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.albums { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.album { width: 130px; }
+.album-cover {
+  width: 130px; height: 130px; border-radius: 10px; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border);
+}
+.album-cover img { width: 100%; height: 100%; object-fit: cover; }
+.album-name { font-size: 14px; margin-top: 6px; }
+
+.heart {
+  position: absolute; top: 6px; right: 6px; border: none; cursor: pointer;
+  background: rgba(0,0,0,0.45); color: #fff; width: 26px; height: 26px;
+  border-radius: 50%; font-size: 14px; line-height: 1; display: flex;
+  align-items: center; justify-content: center;
+}
+.heart-on { color: #ff4d6d; }
+
 .devices { display: flex; flex-direction: column; gap: 8px; }
 .device {
   background: var(--panel); border: 1px solid var(--border);

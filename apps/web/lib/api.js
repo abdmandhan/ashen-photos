@@ -25,8 +25,19 @@ export const api = {
   register: (email, password) =>
     req("/auth/register", { method: "POST", body: { email, password }, authed: false }),
   stats: () => req("/stats"),
-  assets: (limit = 120) => req(`/assets?limit=${limit}`),
+  facets: () => req("/search/facets"),
+  assets: (params = {}) => {
+    const q = new URLSearchParams({ limit: 120, ...params }).toString();
+    return req(`/assets?${q}`);
+  },
   devices: () => req("/devices"),
+  albums: () => req("/albums"),
+  createAlbum: (name) => req("/albums", { method: "POST", body: { name } }),
+  albumAssets: (id) => req(`/albums/${id}/assets`),
+  addToAlbum: (albumId, assetId) =>
+    req(`/albums/${albumId}/assets`, { method: "POST", body: { asset_id: assetId } }),
+  favorite: (assetId, favorite) =>
+    req(`/assets/${assetId}/favorite`, { method: "PUT", body: { favorite } }),
 };
 
 export function setToken(t) {

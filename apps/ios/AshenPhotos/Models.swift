@@ -29,6 +29,12 @@ struct CheckItem: Encodable {
 
 struct CheckRequest: Encodable {
     let items: [CheckItem]
+    let deviceID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case deviceID = "device_id"
+    }
 }
 
 struct CheckResult: Decodable {

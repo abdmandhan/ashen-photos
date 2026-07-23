@@ -75,7 +75,10 @@ extension UploadManager: URLSessionDataDelegate {
     /// Signals the API the object landed; safe to call after a background relaunch
     /// (token from Keychain). Returns nil on success, or a reason string on failure.
     private static func callComplete(uploadID: String) async -> String? {
-        let api = APIClient(tokenProvider: { Keychain.get("token") })
+        let api = APIClient(
+            tokenProvider: { Keychain.get("token") },
+            deviceIDProvider: { UserDefaults.standard.string(forKey: "device_id") }
+        )
         do {
             try await api.completeUpload(id: uploadID)
             return nil

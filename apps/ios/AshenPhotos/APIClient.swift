@@ -25,11 +25,15 @@ enum APIError: LocalizedError {
 final class APIClient {
     private let base: URL
     private let tokenProvider: () -> String?
+    private let deviceIDProvider: () -> String?
     private let session = URLSession(configuration: .default)
 
-    init(base: URL = Config.apiBaseURL, tokenProvider: @escaping () -> String?) {
+    init(base: URL = Config.apiBaseURL,
+         tokenProvider: @escaping () -> String?,
+         deviceIDProvider: @escaping () -> String? = { nil }) {
         self.base = base
         self.tokenProvider = tokenProvider
+        self.deviceIDProvider = deviceIDProvider
     }
 
     private static let encoder: JSONEncoder = {
@@ -64,7 +68,8 @@ final class APIClient {
     // MARK: Uploads
 
     func check(_ items: [CheckItem]) async throws -> [CheckResult] {
-        let resp: CheckResponse = try await post("/uploads/check", body: CheckRequest(items: items))
+        let body = CheckRequest(items: items, deviceID: deviceIDProvider())
+        let resp: CheckResponse = try await post("/uploads/check", body: body)
         return resp.results
     }
 
@@ -94,6 +99,10 @@ final class APIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if authed, let token = tokenProvider() {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        // Device liveness: server bumps last_seen_at from this header.
+        if authed, let deviceID = deviceIDProvider() {
+            req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
         }
         req.httpBody = body
 

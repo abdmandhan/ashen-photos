@@ -10,7 +10,10 @@ final class AuthStore: ObservableObject {
 
     private(set) var deviceID: String?
 
-    private lazy var api = APIClient(tokenProvider: { [weak self] in self?.token })
+    private lazy var api = APIClient(
+        tokenProvider: { [weak self] in self?.token },
+        deviceIDProvider: { [weak self] in self?.deviceID }
+    )
 
     init() {
         token = Keychain.get("token")

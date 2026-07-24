@@ -376,9 +376,32 @@ final class BackupCoordinator: NSObject, ObservableObject {
         return dir.appendingPathComponent("backup_queue.json")
     }
 
+    // Coalescing background persistence. Encoding the whole queue (tens of
+    // thousands of items) must never run on the main actor: at 40k photos it's
+    // called per-asset and per-upload-finish, which would peg the main thread
+    // and trip the iOS watchdog. save() only flags dirty; a single background
+    // writer drains it, so bursts collapse into at most one in-flight write.
+    private var writing = false
+    private var needsWrite = false
+
     private func save() {
-        if let data = try? JSONEncoder().encode(Array(items.values)) {
-            try? data.write(to: storeURL)
+        needsWrite = true
+        guard !writing else { return }
+        writing = true
+        Task { [weak self] in await self?.drainSaves() }
+    }
+
+    private func drainSaves() async {
+        defer { writing = false }
+        while needsWrite {
+            needsWrite = false
+            let snapshot = Array(items.values)   // cheap struct copy on the main actor
+            let url = storeURL
+            await Task.detached(priority: .utility) {
+                if let data = try? JSONEncoder().encode(snapshot) {
+                    try? data.write(to: url, options: .atomic)
+                }
+            }.value
         }
     }
 

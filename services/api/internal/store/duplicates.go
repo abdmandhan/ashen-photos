@@ -8,21 +8,54 @@ type DupGroup struct {
 	Assets  []TimelineAsset `json:"assets"`
 }
 
-// DuplicateGroups returns the user's near-duplicate groups (2+ live members each),
-// newest-first within each group.
-func (s *Store) DuplicateGroups(ctx context.Context, userID string) ([]DupGroup, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT dup_group_id, id, media_type, byte_size, width, height, captured_at, status, favorite, storage_key, thumb_key
-		FROM assets
-		WHERE user_id=$1 AND dup_group_id IS NOT NULL AND deleted_at IS NULL AND status='complete'
-		  AND dup_group_id IN (
-		      SELECT dup_group_id FROM assets
-		      WHERE user_id=$1 AND dup_group_id IS NOT NULL AND deleted_at IS NULL AND status='complete'
-		      GROUP BY dup_group_id HAVING COUNT(*) > 1
-		  )
-		ORDER BY dup_group_id, captured_at DESC NULLS LAST, id DESC`, userID)
+// DuplicateGroups returns a page of the user's near-duplicate groups (2+ live
+// members each), members newest-first within each group. Groups are ordered by
+// their most recent backup time (MAX created_at); `ascending` flips oldest-first.
+// It also returns the total number of qualifying groups for pagination.
+func (s *Store) DuplicateGroups(ctx context.Context, userID string, limit, offset int, ascending bool) ([]DupGroup, int, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Total qualifying groups (for the pagination UI).
+	var total int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM (
+		    SELECT dup_group_id FROM assets
+		    WHERE user_id=$1 AND dup_group_id IS NOT NULL AND deleted_at IS NULL AND status='complete'
+		    GROUP BY dup_group_id HAVING COUNT(*) > 1
+		) g`, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	dir := "DESC"
+	if ascending {
+		dir = "ASC"
+	}
+	// Pick the page of group ids first (ordered by group backup time), then pull
+	// all members of just those groups.
+	q := `
+		WITH grp AS (
+		    SELECT dup_group_id, MAX(created_at) AS ts
+		    FROM assets
+		    WHERE user_id=$1 AND dup_group_id IS NOT NULL AND deleted_at IS NULL AND status='complete'
+		    GROUP BY dup_group_id HAVING COUNT(*) > 1
+		    ORDER BY ts ` + dir + `, dup_group_id
+		    LIMIT ` + itoa(limit) + ` OFFSET ` + itoa(offset) + `
+		)
+		SELECT a.dup_group_id, a.id, a.media_type, a.byte_size, a.width, a.height,
+		       a.captured_at, a.status, a.favorite, a.storage_key, a.thumb_key
+		FROM assets a
+		JOIN grp ON grp.dup_group_id = a.dup_group_id
+		WHERE a.user_id=$1 AND a.deleted_at IS NULL AND a.status='complete'
+		ORDER BY grp.ts ` + dir + `, a.dup_group_id, a.captured_at DESC NULLS LAST, a.id DESC`
+
+	rows, err := s.pool.Query(ctx, q, userID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -33,7 +66,7 @@ func (s *Store) DuplicateGroups(ctx context.Context, userID string) ([]DupGroup,
 		var a TimelineAsset
 		if err := rows.Scan(&gid, &a.ID, &a.MediaType, &a.ByteSize, &a.Width, &a.Height,
 			&a.CapturedAt, &a.Status, &a.Favorite, &a.StorageKey, &a.ThumbKey); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if cur == nil || cur.GroupID != gid {
 			groups = append(groups, DupGroup{GroupID: gid})
@@ -41,7 +74,7 @@ func (s *Store) DuplicateGroups(ctx context.Context, userID string) ([]DupGroup,
 		}
 		cur.Assets = append(cur.Assets, a)
 	}
-	return groups, rows.Err()
+	return groups, total, rows.Err()
 }
 
 // ResolveDuplicate acts on one asset in a dup group.

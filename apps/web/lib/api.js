@@ -52,7 +52,10 @@ export const api = {
     req(`/albums/${albumId}/assets/${assetId}`, { method: "DELETE" }),
   favorite: (assetId, favorite) =>
     req(`/assets/${assetId}/favorite`, { method: "PUT", body: { favorite } }),
-  duplicates: () => req("/duplicates"),
+  duplicates: (params = {}) => {
+    const q = new URLSearchParams({ limit: 20, offset: 0, ...params }).toString();
+    return req(`/duplicates?${q}`);
+  },
   resolveDuplicate: (assetId, action) =>
     req(`/assets/${assetId}/resolve-duplicate`, {
       method: "POST",

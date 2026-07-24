@@ -12,9 +12,17 @@ type dupGroupResponse struct {
 	Assets  []timelineItem `json:"assets"`
 }
 
-// GET /duplicates — near-duplicate groups for review.
+// GET /duplicates?limit=&offset=&sort=oldest — paginated near-duplicate groups.
 func (s *Server) handleListDuplicates(w http.ResponseWriter, r *http.Request) {
-	groups, err := s.store.DuplicateGroups(r.Context(), userID(r))
+	q := r.URL.Query()
+	limit := atoi(q.Get("limit"))
+	if limit == 0 {
+		limit = 20
+	}
+	offset := atoi(q.Get("offset"))
+	ascending := q.Get("sort") == "oldest"
+
+	groups, total, err := s.store.DuplicateGroups(r.Context(), userID(r), limit, offset, ascending)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "list duplicates failed")
 		return
@@ -26,7 +34,9 @@ func (s *Server) handleListDuplicates(w http.ResponseWriter, r *http.Request) {
 			Assets:  s.presignTimeline(r, g.Assets),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"groups": out})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"groups": out, "total": total, "limit": limit, "offset": offset,
+	})
 }
 
 // POST /assets/{id}/resolve-duplicate  body {"action":"delete"|"keep"}

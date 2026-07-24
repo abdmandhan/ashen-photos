@@ -78,6 +78,10 @@ function Dashboard({ onLogout }) {
   const [devices, setDevices] = useState([]);
   const [albums, setAlbums] = useState([]);
   const [dups, setDups] = useState([]);
+  const [dupSort, setDupSort] = useState("newest");
+  const [dupOffset, setDupOffset] = useState(0);
+  const [dupsTotal, setDupsTotal] = useState(0);
+  const [dupsLoadingMore, setDupsLoadingMore] = useState(false);
   const [repl, setRepl] = useState(null);
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("newest");
@@ -92,6 +96,7 @@ function Dashboard({ onLogout }) {
   const [addMenu, setAddMenu] = useState(null);       // asset id whose add-to-album menu is open
 
   const PAGE = 100;
+  const DUP_PAGE = 20;
 
   function buildParams(off) {
     const f = FILTERS.find((x) => x.key === filter) || FILTERS[0];
@@ -131,18 +136,44 @@ function Dashboard({ onLogout }) {
   }
 
   async function refreshMeta() {
-    const [s, fc, d, al, du, rp] = await Promise.all([
+    const [s, fc, d, al, rp] = await Promise.all([
       api.stats(), api.facets(), api.devices(), api.albums(),
-      api.duplicates(), api.replicationStatus(),
+      api.replicationStatus(),
     ]);
     setStats(s); setFacets(fc); setDevices(d || []); setAlbums(al.albums || []);
-    setDups(du.groups || []); setRepl(rp);
+    setRepl(rp);
+  }
+
+  // Loads the first page of duplicate groups (on sort change or after resolving).
+  async function loadDuplicates(sortVal = dupSort) {
+    const du = await api.duplicates({ limit: DUP_PAGE, offset: 0, sort: sortVal });
+    const list = du.groups || [];
+    setDups(list);
+    setDupOffset(list.length);
+    setDupsTotal(du.total || 0);
+  }
+
+  async function loadMoreDups() {
+    if (dupsLoadingMore || dups.length >= dupsTotal) return;
+    setDupsLoadingMore(true);
+    try {
+      const du = await api.duplicates({ limit: DUP_PAGE, offset: dupOffset, sort: dupSort });
+      const list = du.groups || [];
+      setDups((prev) => {
+        const seen = new Set(prev.map((g) => g.group_id));
+        return [...prev, ...list.filter((g) => !seen.has(g.group_id))];
+      });
+      setDupOffset((o) => o + list.length);
+      setDupsTotal(du.total || 0);
+    } catch (e) { setError(e.message); }
+    finally { setDupsLoadingMore(false); }
   }
 
   useEffect(() => {
     (async () => {
       try {
         await refreshMeta();
+        await loadDuplicates();
         await loadTimeline("all");
       } catch (e) {
         setError(e.message);
@@ -156,9 +187,17 @@ function Dashboard({ onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, fromDate, toDate]);
 
+  // Reload duplicate groups when their sort changes.
+  useEffect(() => {
+    loadDuplicates().catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dupSort]);
+
   async function resolveDup(assetId, action) {
-    try { await api.resolveDuplicate(assetId, action); await refreshMeta(); await loadTimeline(); }
-    catch (e) { setError(e.message); }
+    try {
+      await api.resolveDuplicate(assetId, action);
+      await Promise.all([refreshMeta(), loadDuplicates(), loadTimeline()]);
+    } catch (e) { setError(e.message); }
   }
 
   async function runRedrive() {
@@ -247,9 +286,18 @@ function Dashboard({ onLogout }) {
           ))}
         </div>
 
-        {dups.length > 0 && (
+        {dupsTotal > 0 && (
           <>
-            <div className="section-title">Possible duplicates ({dups.length} group{dups.length === 1 ? "" : "s"})</div>
+            <div className="section-header">
+              <div className="section-title">Possible duplicates ({dupsTotal} group{dupsTotal === 1 ? "" : "s"})</div>
+              <label className="tool">
+                Sort
+                <select value={dupSort} onChange={(e) => setDupSort(e.target.value)}>
+                  <option value="newest">Newest backed up</option>
+                  <option value="oldest">Oldest backed up</option>
+                </select>
+              </label>
+            </div>
             {dups.map((g) => (
               <div className="dup-group" key={g.group_id}>
                 {g.assets.map((a) => (
@@ -264,6 +312,14 @@ function Dashboard({ onLogout }) {
                 ))}
               </div>
             ))}
+            {dups.length < dupsTotal && (
+              <div style={{ textAlign: "center", marginTop: 16 }}>
+                <button className="btn" style={{ width: "auto", padding: "10px 24px" }}
+                  onClick={loadMoreDups} disabled={dupsLoadingMore}>
+                  {dupsLoadingMore ? "Loading…" : `Load more (${dupsTotal - dups.length} left)`}
+                </button>
+              </div>
+            )}
           </>
         )}
 

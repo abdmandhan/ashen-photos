@@ -18,7 +18,9 @@ type AssetFilter struct {
 	Limit     int
 	Before    *time.Time // keyset cursor
 	Offset    int        // page offset (simple pagination, robust to null captured_at)
-	Ascending bool       // oldest-first when true (default newest-first)
+	// Sort order: "" / "newest" = captured newest-first (default),
+	// "oldest" = captured oldest-first, "backed_up" = most recently backed up first.
+	Sort string
 }
 
 // ListAssetsFiltered returns completed assets matching the filter, newest-first,
@@ -67,14 +69,17 @@ func (s *Store) ListAssetsFiltered(ctx context.Context, userID string, f AssetFi
 			"EXISTS (SELECT 1 FROM uploads u WHERE u.asset_id = a.id AND u.device_id = $%d)", len(args)))
 	}
 
-	dir := "DESC"
-	if f.Ascending {
+	orderCol, dir := "a.captured_at", "DESC"
+	switch f.Sort {
+	case "oldest":
 		dir = "ASC"
+	case "backed_up":
+		orderCol = "a.created_at" // when the asset was first backed up
 	}
 	q := `SELECT a.id, a.media_type, a.byte_size, a.width, a.height, a.captured_at, a.status, a.favorite, a.storage_key, a.thumb_key
 	      FROM assets a` + join +
 		` WHERE ` + strings.Join(conds, " AND ") +
-		` ORDER BY a.captured_at ` + dir + ` NULLS LAST, a.id ` + dir + ` LIMIT ` + itoa(limit)
+		` ORDER BY ` + orderCol + ` ` + dir + ` NULLS LAST, a.id ` + dir + ` LIMIT ` + itoa(limit)
 	if f.Offset > 0 {
 		q += ` OFFSET ` + itoa(f.Offset)
 	}

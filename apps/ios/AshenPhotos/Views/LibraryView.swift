@@ -29,14 +29,15 @@ struct LibraryView: View {
                 HStack {
                     Menu {
                         Picker("Sort", selection: Binding(
-                            get: { store.sortOldest },
-                            set: { store.sortOldest = $0; store.applyFilters() }
+                            get: { store.sort },
+                            set: { store.sort = $0; store.applyFilters() }
                         )) {
-                            Text("Newest first").tag(false)
-                            Text("Oldest first").tag(true)
+                            ForEach(SortMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
                     } label: {
-                        Label(store.sortOldest ? "Oldest" : "Newest", systemImage: "arrow.up.arrow.down")
+                        Label(store.sort.label, systemImage: "arrow.up.arrow.down")
                             .font(.subheadline)
                     }
                     Spacer()

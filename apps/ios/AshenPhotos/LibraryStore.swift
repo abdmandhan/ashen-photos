@@ -21,12 +21,40 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum SortMode: String, CaseIterable, Identifiable {
+    case newest, oldest, backedUp
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .newest: return "Newest first"
+        case .oldest: return "Oldest first"
+        case .backedUp: return "Latest backed up"
+        }
+    }
+    /// Short label for the menu button.
+    var label: String {
+        switch self {
+        case .newest: return "Newest"
+        case .oldest: return "Oldest"
+        case .backedUp: return "Backed up"
+        }
+    }
+    /// `sort` query value, nil for the default (newest captured first).
+    var param: String? {
+        switch self {
+        case .newest: return nil
+        case .oldest: return "oldest"
+        case .backedUp: return "backed_up"
+        }
+    }
+}
+
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var assets: [RemoteAsset] = []
     @Published private(set) var albums: [RemoteAlbum] = []
     @Published var filter: LibraryFilter = .all
-    @Published var sortOldest = false
+    @Published var sort: SortMode = .newest
     @Published var fromDate: Date?
     @Published var toDate: Date?
     @Published private(set) var loading = false
@@ -54,7 +82,7 @@ final class LibraryStore: ObservableObject {
     private func query(offset: Int) -> String {
         var items = ["limit=\(pageSize)", "offset=\(offset)"]
         if let p = filter.param { items.append(p) }
-        if sortOldest { items.append("sort=oldest") }
+        if let s = sort.param { items.append("sort=" + s) }
         let cal = Calendar.current
         if let f = fromDate {
             items.append("from=" + Self.iso.string(from: cal.startOfDay(for: f)))

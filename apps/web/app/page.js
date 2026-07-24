@@ -311,6 +311,7 @@ function Dashboard({ onLogout }) {
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
+              <option value="backed_up">Latest backed up</option>
             </select>
           </label>
           <label className="tool">From

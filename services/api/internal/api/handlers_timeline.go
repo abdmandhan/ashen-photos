@@ -31,7 +31,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 		DeviceID:  q.Get("device_id"),
 		Limit:     atoi(q.Get("limit")),
 		Offset:    atoi(q.Get("offset")),
-		Ascending: q.Get("sort") == "oldest",
+		Sort:      q.Get("sort"),
 		From:      parseTime(q.Get("from")),
 		To:        parseTime(q.Get("to")),
 		Before:    parseTime(q.Get("before")),

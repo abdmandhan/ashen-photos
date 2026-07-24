@@ -61,6 +61,11 @@ export const api = {
       method: "POST",
       body: { action },
     }),
+  keepDuplicate: (groupId, keepAssetId) =>
+    req(`/duplicates/${groupId}/keep`, {
+      method: "POST",
+      body: { keep_asset_id: keepAssetId },
+    }),
   replicationStatus: () => req("/replication/status"),
   redrive: () => req("/replication/redrive", { method: "POST" }),
 };

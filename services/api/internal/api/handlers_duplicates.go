@@ -63,3 +63,25 @@ func (s *Server) handleResolveDuplicate(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": in.Action})
 }
+
+// POST /duplicates/{group_id}/keep  body {"keep_asset_id":"..."}
+// Keeps one asset and soft-deletes the rest of the group.
+func (s *Server) handleKeepDuplicate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		KeepAssetID string `json:"keep_asset_id"`
+	}
+	if err := decode(r, &in); err != nil || in.KeepAssetID == "" {
+		writeErr(w, http.StatusBadRequest, "keep_asset_id required")
+		return
+	}
+	deleted, err := s.store.KeepDuplicate(r.Context(), userID(r), chiURLParam(r, "group_id"), in.KeepAssetID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "asset not in group")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "keep failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted})
+}

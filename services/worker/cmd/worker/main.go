@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -51,6 +52,10 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 	defer rdb.Close()
+
+	// Asynq client for the metadata pipeline (separate queue).
+	metaClient := asynq.NewClient(asynq.RedisClientOpt{Addr: ropt.Addr, Password: ropt.Password, DB: ropt.DB})
+	defer metaClient.Close()
 
 	proc := processor.New(pool, s3, cfg.BucketThumbnail)
 	if cfg.ReplicationEnabled() {
@@ -121,7 +126,31 @@ func main() {
 					_ = rdb.LPush(context.Background(), rkey, b).Err()
 				}
 			}
+			// Kick off metadata processing (async, independent — BR-001/002).
+			enqueueMetadata(metaClient, j)
 		}
 		cancel()
+	}
+}
+
+// enqueueMetadata submits a deduplicated EXTRACT_METADATA task after verification.
+func enqueueMetadata(c *asynq.Client, j job.VerifyJob) {
+	payload, err := json.Marshal(map[string]string{
+		"asset_id":    j.AssetID,
+		"user_id":     j.UserID,
+		"bucket":      j.Bucket,
+		"storage_key": j.StorageKey,
+		"media_type":  j.MediaType,
+		"sha256":      j.SHA256,
+	})
+	if err != nil {
+		return
+	}
+	// TaskID makes re-verification idempotent (BR-006): duplicate is rejected.
+	task := asynq.NewTask("metadata:extract", payload,
+		asynq.TaskID("extract:"+j.AssetID+":1"), asynq.Queue("metadata"))
+	if _, err := c.Enqueue(task, asynq.MaxRetry(5), asynq.Timeout(2*time.Minute)); err != nil &&
+		!errors.Is(err, asynq.ErrTaskIDConflict) && !errors.Is(err, asynq.ErrDuplicateTask) {
+		log.Printf("enqueue metadata asset=%s: %v", j.AssetID, err)
 	}
 }

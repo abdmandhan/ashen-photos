@@ -87,8 +87,10 @@ html, body {
 .chip-danger { background: transparent; border-color: #7f1d1d; color: #f87171; }
 .chip-danger:hover { background: #7f1d1d; color: #fff; }
 
+.dup-group-wrap { margin-bottom: 14px; }
+.dup-group-head { font-size: 12px; color: #9ca3af; margin: 0 2px 6px; }
 .dup-group {
-  display: flex; gap: 12px; padding: 12px; margin-bottom: 12px; flex-wrap: wrap;
+  display: flex; gap: 12px; padding: 12px; flex-wrap: wrap;
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
 }
 .dup-item { width: 120px; }

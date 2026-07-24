@@ -70,6 +70,7 @@ func (s *Server) Router() http.Handler {
 
 		r.Get("/duplicates", s.handleListDuplicates)
 		r.Post("/assets/{id}/resolve-duplicate", s.handleResolveDuplicate)
+		r.Post("/duplicates/{group_id}/keep", s.handleKeepDuplicate)
 
 		r.Get("/replication/status", s.handleReplicationStatus)
 		r.Post("/replication/redrive", s.handleReplicationRedrive)
@@ -77,6 +78,9 @@ func (s *Server) Router() http.Handler {
 		r.Get("/thumbnails/missing", s.handleMissingThumbs)
 		r.Post("/thumbnails/presign", s.handlePresignThumb)
 		r.Post("/thumbnails/commit", s.handleCommitThumb)
+
+		r.Get("/assets/{id}/metadata", s.handleAssetMetadata)
+		r.Get("/assets/{id}/processing-jobs", s.handleAssetJobs)
 	})
 
 	return r

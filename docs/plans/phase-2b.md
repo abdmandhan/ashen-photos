@@ -2,7 +2,7 @@
 
 > Goal: a separate, async worker that extracts, normalizes, enriches, and indexes metadata for **already-verified** assets, powering search by filename, date, camera, dimensions, duration, location, visible text (OCR), captions/labels, and semantic vectors. Never touches originals; never affects backup status.
 
-> **Status: 📝 PLANNED** — new independent service `services/metadata-worker`. Builds on the existing backup pipeline (assets reach `status=complete`). Requirement: `docs/requirements/metadata.md`.
+> **Status: 🚧 M1 DONE** — `services/metadata-worker` built (Asynq). Verify worker enqueues `metadata:extract` on `complete` → extract (exiftool/ffprobe) → normalize → index. Verified E2E on nuc: EXIF photo → technical metadata (camera, ISO, aperture, focal length, captured_at, GPS lat/lng), search doc + full-text, `GET /assets/{id}/metadata` + `/processing-jobs`. M2–M4 pending. Requirement: `docs/requirements/metadata.md`.
 
 ---
 
@@ -116,7 +116,20 @@ ANALYZE_CONTENT ────┴→ (feed INDEX) → GENERATE_EMBEDDING (after OC
 
 ### M3 — OCR (req Phase 3, off by default)
 
-- [ ] `RUN_OCR` (local tesseract default; pluggable). Screenshot/document heuristic gating. Store text/lang/confidence/boxes; no-text = success. Add to search doc (full-text). Sensitive: owner-only.
+> **Primary: Apple Vision on-device. Fallback: Tesseract on the worker.** Mirrors the client-thumbnail pattern — the phone does what the Linux worker does poorly, and uploads the result. Requirement example literally names `provider: "vision-framework"`.
+
+**Why on-device primary:** best accuracy for OCR's exact targets (screenshots, receipts, documents), **zero server CPU/GPU**, **fully private** (pixels never leave the device), reuses infra we already built for thumbnails.
+
+- [ ] **iOS — Apple Vision path (primary):**
+  - When `ocr.enabled`, run `VNRecognizeTextRequest` (accurate mode) on the local `PHAsset` during backup (or a backfill sweep, exactly like thumbnail backfill).
+  - Send `{text, language, confidence, boxes}` to the API, keyed by the asset's sha (same slot pattern as client thumbnails: presign/commit or a dedicated `POST /assets/{id}/ocr`).
+  - Gate to likely-text media (screenshots + images where Vision finds text) to avoid wasted work; `no text found` = success with empty result.
+  - Only works for assets **still on device** (needs pixels). Deleted-from-device assets fall through to the worker fallback.
+- [ ] **Worker — Tesseract path (fallback / server-side):**
+  - `RUN_OCR` Asynq task: pull original from storage → decode (libheif for HEIC) → Tesseract (gosseract/exec). For assets with no client-supplied OCR (e.g. removed from device, or web-only deployments).
+  - Same `asset_ocr_results` shape; records `provider=tesseract` + version.
+- [ ] **Shared:** store text/lang/confidence/boxes in `asset_ocr_results`; add to `search_documents` (full-text). Sensitive → owner-only (BR-012). Client-supplied (Vision) result wins over worker Tesseract for the same asset; never double-store (dedup by `input_hash`).
+- [ ] **External cloud OCR** (Google Vision / AWS Textract / Azure) — pluggable provider, **off by default** (media leaves the box); users informed before enabling.
 
 ### M4 — AI enrichment (req Phase 4, off by default)
 
@@ -148,7 +161,11 @@ metadata_worker:
   extraction: { enabled: true, tool: exiftool }
   video: { enabled: true, tool: ffprobe }
   reverse_geocoding: { enabled: true, provider: nominatim, cache_precision: 4 }
-  ocr: { enabled: false, provider: local }
+  ocr:
+    enabled: false
+    primary: apple_vision   # on-device (iOS); best accuracy, fully private
+    fallback: tesseract     # worker-side, for assets no longer on device
+    # external: { provider: google_vision, enabled: false }  # opt-in, media leaves box
   content_analysis: { enabled: false, provider: local }
   embeddings: { enabled: false, provider: local, dimensions: 768 }
 ```
@@ -193,7 +210,7 @@ Metrics: jobs created/completed/failed/retried/processing, avg time per type, qu
 
 - **Asynq adoption** — introduce for metadata only, or migrate verify/replicate too? (Propose: metadata only first; migrate later if it proves out.)
 - **HEIC EXIF** — exiftool covers it; keep libheif only if we later need pixel access (OCR/analysis). (Propose: exiftool for M1; libheif when OCR lands.)
-- **OCR engine on Linux** — Apple Vision is client-only; server uses tesseract or an external API. (Propose: tesseract default, external pluggable.)
+- ~~**OCR engine**~~ **Resolved: Apple Vision on-device (primary) + Tesseract worker (fallback)**; external cloud pluggable + off by default. Vision runs on the iPhone (free, private, best accuracy), uploads text like client thumbnails; Tesseract covers assets no longer on device.
 - **Embedding model** — local (privacy) vs external. Dimensions? (Propose: local default, 768-dim, pgvector.)
 - **Reprocess authz** — strict owner vs admin-only for bulk. (Propose: per-asset = owner; `retry-failed` bulk = admin.)
 - **Timeline source of truth** — switch reads to normalized technical metadata, fall back to existing `assets.captured_at/width/height`.

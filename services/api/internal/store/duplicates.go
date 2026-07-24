@@ -99,3 +99,39 @@ func (s *Store) ResolveDuplicate(ctx context.Context, userID, assetID, action st
 	}
 	return nil
 }
+
+// KeepDuplicate resolves a whole group at once: soft-deletes every member except
+// keepAssetID, then dismisses the kept asset from the group. Returns how many
+// were deleted. Errors with ErrNotFound if the kept asset isn't in the group.
+func (s *Store) KeepDuplicate(ctx context.Context, userID, groupID, keepAssetID string) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	// The kept asset must actually be a live member of this group.
+	kept, err := tx.Exec(ctx,
+		`UPDATE assets SET dup_group_id=NULL
+		 WHERE id=$1 AND user_id=$2 AND dup_group_id=$3 AND deleted_at IS NULL AND status='complete'`,
+		keepAssetID, userID, groupID)
+	if err != nil {
+		return 0, err
+	}
+	if kept.RowsAffected() == 0 {
+		return 0, ErrNotFound
+	}
+
+	// Soft-delete the other members of the group.
+	del, err := tx.Exec(ctx,
+		`UPDATE assets SET deleted_at=now(), dup_group_id=NULL
+		 WHERE user_id=$1 AND dup_group_id=$2 AND id<>$3 AND deleted_at IS NULL AND status='complete'`,
+		userID, groupID, keepAssetID)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int(del.RowsAffected()), nil
+}

@@ -200,6 +200,15 @@ function Dashboard({ onLogout }) {
     } catch (e) { setError(e.message); }
   }
 
+  // Keep one asset, soft-delete the rest of its group.
+  async function keepDup(groupId, keepAssetId, others) {
+    if (others > 0 && !confirm(`Delete the other ${others} cop${others === 1 ? "y" : "ies"} in this group?`)) return;
+    try {
+      await api.keepDuplicate(groupId, keepAssetId);
+      await Promise.all([refreshMeta(), loadDuplicates(), loadTimeline()]);
+    } catch (e) { setError(e.message); }
+  }
+
   async function runRedrive() {
     try { const r = await api.redrive(); await refreshMeta(); alert(`Queued ${r.queued} for replication`); }
     catch (e) { setError(e.message); }
@@ -299,17 +308,26 @@ function Dashboard({ onLogout }) {
               </label>
             </div>
             {dups.map((g) => (
-              <div className="dup-group" key={g.group_id}>
-                {g.assets.map((a) => (
-                  <div className="dup-item" key={a.id}>
-                    {a.thumb_url ? <img src={a.thumb_url} alt="" /> : <div className="placeholder">{a.media_type}</div>}
-                    <div className="dup-actions">
-                      <button className="chip" onClick={() => resolveDup(a.id, "keep")}>Keep</button>
-                      <button className="chip chip-danger" onClick={() => resolveDup(a.id, "delete")}>Delete</button>
+              <div className="dup-group-wrap" key={g.group_id}>
+                <div className="dup-group-head">
+                  {g.assets.length} cop{g.assets.length === 1 ? "y" : "ies"} · keep one, delete the rest
+                </div>
+                <div className="dup-group">
+                  {g.assets.map((a) => (
+                    <div className="dup-item" key={a.id}>
+                      {a.thumb_url ? <img src={a.thumb_url} alt="" /> : <div className="placeholder">{a.media_type}</div>}
+                      <div className="dup-actions">
+                        <button className="chip" onClick={() => keepDup(g.group_id, a.id, g.assets.length - 1)}>
+                          Keep this
+                        </button>
+                        <button className="chip chip-danger" onClick={() => resolveDup(a.id, "delete")}>
+                          Delete
+                        </button>
+                      </div>
+                      <div className="meta">{fmtBytes(a.byte_size)}</div>
                     </div>
-                    <div className="meta">{fmtBytes(a.byte_size)}</div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ))}
             {dups.length < dupsTotal && (
